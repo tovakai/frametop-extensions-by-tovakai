@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+*.log
+*.jsonl
+.env
+*.swp
+# Do not add headset data or captured eye images
+*.mp4
+*.mkv
+*.webm
+*.png
+*.jpg
+*.jpeg

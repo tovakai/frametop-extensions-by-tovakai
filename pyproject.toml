@@ -1,0 +1,17 @@
+[project]
+name = "frametop-extensions-by-tovakai"
+version = "0.0.1"
+description = "Independent extensions and SDK for Frametop (experimental)"
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = []
+
+[tool.setuptools]
+package-dir = {"" = "sdk"}
+
+[tool.setuptools.packages.find]
+where = ["sdk"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
