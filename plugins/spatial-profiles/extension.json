@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "id": "tovakai.spatial-profiles",
+  "name": "Spatial Profiles",
+  "version": "0.0.1",
+  "description": "Read-only inspection of legacy six-slot spatial profiles (full plugin pending)",
+  "status": "prototype",
+  "min_extension_api": 1,
+  "required_capabilities": [],
+  "optional_capabilities": [
+    "screen.status",
+    "screen.opacity",
+    "screen.move"
+  ],
+  "entrypoint": "profiles.py"
+}
