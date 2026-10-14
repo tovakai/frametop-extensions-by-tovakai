@@ -118,3 +118,34 @@ jobs:
           assert len((p/"popup.rgba").read_bytes())==w*h*4
           print("Legacy Start menu Pango/Cairo smoke test OK:",w,h)
           '
+      - name: Exercise persistent renderer with real Cairo/Pango
+        run: |
+          export FT_TOOLBAR_TEST_DIR="${RUNNER_TEMP}/toolbar-popup"
+          FT_TOOLBAR_TRACE=1 /usr/bin/python3 plugins/spatial-toolbar/menu_worker.py serve \
+            --dir "$FT_TOOLBAR_TEST_DIR" > "$FT_TOOLBAR_TEST_DIR/menu-worker.log" 2>&1 &
+          worker=$!
+          trap 'kill "$worker" 2>/dev/null || true' EXIT
+          /usr/bin/python3 - <<'PY'
+          import os, sys, time
+          from pathlib import Path
+          sys.path.insert(0, "plugins/spatial-toolbar")
+          import menu_worker
+          d = Path(os.environ["FT_TOOLBAR_TEST_DIR"])
+          for _ in range(100):
+              try:
+                  menu_worker.request(d,"ping",timeout=.15)
+                  break
+              except (OSError,RuntimeError):
+                  time.sleep(.05)
+          else:
+              raise AssertionError("persistent renderer not ready")
+          started=time.perf_counter()
+          menu_worker.request(d,"render","start")
+          menu_worker.request(d,"activate","start","cat:all")
+          menu_worker.request(d,"render","start")
+          print("Warm renderer repeated Start/category duration:",
+                round(time.perf_counter()-started,3),"seconds")
+          menu_worker.request(d,"stop")
+          PY
+          wait "$worker"
+          cat "$FT_TOOLBAR_TEST_DIR/menu-worker.log"
