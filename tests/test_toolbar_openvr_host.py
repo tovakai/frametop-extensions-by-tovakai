@@ -40,13 +40,37 @@ class HostContracts(unittest.TestCase):
         code=(DIR/"toolbar.cpp").read_text()
         self.assertIn('VROverlayInputMethod_None',code)
         self.assertIn('SetOverlayMouseScale(s.handle,&scale)',code)
-        self.assertIn('SetOverlayMouseScale(popup.handle,&mouseScale)',code)
+        self.assertIn('SetOverlayMouseScale(incoming.handle,&mouseScale)',code)
         self.assertIn('SetOverlayAlpha(display.handle',code)
         # Hover is an alpha-only change, never a texture re-upload.
         loop=code.split('void loop(){')[1].split('};\n} // namespace')[0]
         self.assertNotIn('SetOverlayRaw',loop)
         self.assertIn('IsDashboardVisible()',loop)
         self.assertIn('GetCurrentSceneProcessId()',loop)
+
+    def test_category_navigation_keeps_old_popup_visible_during_swap(self):
+        code=(DIR/"toolbar.cpp").read_text()
+        self.assertIn("std::array<Surface,2> popups",code)
+        self.assertIn('tovakai.spatial-toolbar.popup.swap',code)
+        self.assertIn("const int stage=(activePopup<0)?0:1-activePopup;",code)
+        self.assertIn("SetOverlayRaw(incoming.handle,pixels.data()",code)
+        self.assertIn("SetOverlaySortOrder(incoming.handle,5)",code)
+        self.assertIn("SetOverlaySortOrder(outgoing.handle,4)",code)
+        self.assertIn("SetOverlayInputMethod(outgoing.handle,vr::VROverlayInputMethod_None)",code)
+        self.assertIn("retirePopupAfter=std::chrono::steady_clock::now()+",code)
+        self.assertIn("std::chrono::milliseconds(55)",code)
+        self.assertIn("retire_popup_if_ready();",code)
+        self.assertIn("for(auto &p:popups)show(p,false);",code)
+        self.assertIn("if(!visible||!shown||index!=activePopup)continue;",code)
+        # Uploads happen to the staging handle, never the visible active one.
+        open_method=code.split('    void open(const std::string& kind,')[1].split('    void click(',1)[0]
+        self.assertNotIn("SetOverlayRaw(popups[size_t(activePopup)]",open_method)
+        self.assertIn("if(err!=vr::VROverlayError_None)",open_method)
+        self.assertIn("current menu stays visible",open_method)
+        self.assertIn("if(showErr!=vr::VROverlayError_None)",open_method)
+        # Existing toolbar backplate remains passive and the retiring image
+        # stops receiving mouse input before it is hidden.
+        self.assertIn("mouse?vr::VROverlayInputMethod_Mouse:vr::VROverlayInputMethod_None",code)
 
     def test_orig_models_and_painter_are_used(self):
         provider=(DIR/"menu.py").read_text()
