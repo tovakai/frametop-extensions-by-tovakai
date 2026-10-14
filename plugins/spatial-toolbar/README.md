@@ -182,6 +182,54 @@ opening/closing Start and Displays still works. This behavior is covered by
 offline regression and C++ syntax tests but needs Steam Frame visual
 verification before merging the experimental toolbar branch.
 
+### Upstream-style grab handle and thumbstick depth dragging
+
+The Steam Frame hardware feedback confirmed the toolbar grab handle can move
+the toolbar, but its initial bright-blue chunky pill didn't match upstream
+Frametop's display grab bars, and it could not push/pull the toolbar with
+the thumbstick while holding the controller trigger.
+
+The **standalone toolbar** now copies the actual upstream
+[Frametop grab chrome and Push() geometry](https://github.com/Frametop/frametop/blob/main/screens/vr.cpp)
+without modifying the Frametop core:
+
+- 256 × 24 pill texture, 0.30 m wide; translucent light grey when idle,
+  blue while hovered or carried. Matches upstream `BarTexture()`.
+- The grab overlay opts into `VROverlayFlags_SendVRDiscreteScrollEvents`
+  and handles `VREvent_ScrollDiscrete` **while held**. On Steam Frame,
+  thumbstick up/down should send repeating scroll notches through OpenVR
+  while held, just like upstream's screen grab bar.
+- `push_drag` applies upstream's head-to-panel distance scaling:
+  `next = clamp(current * (1 + 0.08 * notches), 0.3 m, 10 m)`.
+  The headset-to-toolbar vector determines push direction, **not**
+  the controller's local axis.
+- After each depth step the saved controller-relative grip offset is
+  recalculated, preserving arm movement and reducing jumping.
+- The static overlay key, mouse scale, and 16 ms tracking loop stay intact;
+  textures are uploaded only when the grip's highlight actually changes.
+
+The source compile and unit regression tests validate the geometry and
+event contract. Device testing is still required to confirm SteamVR routes
+repeating held-thumbstick scroll to this standalone overlay.
+
+**Requires a rebuild** in your current isolated test worktree:
+
+```sh
+cd ~/frametop-toolbar-test
+git fetch origin feature/toolbar-openvr-host
+git switch --detach origin/feature/toolbar-openvr-host
+bash plugins/spatial-toolbar/build.sh
+bash plugins/spatial-toolbar/run.sh
+```
+
+Test moving the toolbar by dragging the grey pill, then **keep holding the
+grab trigger** and hold the thumbstick forward/backward. The bar should
+move toward/away from your head, and stay in its new world position when
+you release. The pill should glow blue while active and return to light
+grey when released. If thumbstick scroll never arrives, the next hardware
+diagnostic is to log grab-overlay scroll events rather than guessing at an
+OpenVR action binding.
+
 ### Original popup renderer dependencies
 
 The legacy toolbar's Pango/Cairo painter originally ran on the **SteamOS
