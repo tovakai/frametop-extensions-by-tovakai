@@ -93,7 +93,9 @@ class HostContracts(unittest.TestCase):
         self.assertIn("python3-gobject python3-cairo pango",dependencies)
         self.assertIn('"$core/scripts/in-box"',dependencies)
         self.assertIn("menu.py",launcher)
-        self.assertIn(" render --dir ",launcher)
+        self.assertIn(" render --kind profiles --dir ",launcher)
+        self.assertIn(" render --kind start --dir ",launcher)
+        self.assertIn(" render --kind toolbar --dir ",launcher)
         self.assertIn("install-renderer-deps.sh",launcher)
         # No implicit package installation, root access or compositor restart
         # is permitted during the normal renderer startup.
