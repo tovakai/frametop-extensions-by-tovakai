@@ -41,6 +41,17 @@ The bar should appear around 75 cm in front of your initial headset pose,
 The backdrop does **not** capture controller clicks. Aim at **Displays**
 (the monitor glyph), open the familiar popup, and select a saved profile.
 Press **Ctrl+C** in the launching terminal to stop the independent overlay.
+Because distrobox doesn't always forward signals, the runner also sends an
+extension-owned shutdown message when it exits. If the terminal disconnects
+or the overlays remain visible, use the **safe fallback**:
+
+```sh
+python3 ~/frametop-toolbar-test/plugins/spatial-toolbar/control.py stop
+```
+
+This requests graceful shutdown through `@tovakai_toolbar_control`.
+Only the toolbar's own overlays are destroyed; Frametop and SteamVR continue
+running. Unlike `pkill`, it cannot accidentally match another program.
 
 The plugin intentionally hides its overlays while the Steam Dashboard or a
 SteamVR scene application is active to avoid invisible controller hitboxes.
