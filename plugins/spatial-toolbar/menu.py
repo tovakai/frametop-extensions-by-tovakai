@@ -26,6 +26,11 @@ import gi  # noqa: E402
 gi.require_version("Pango", "1.0")
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Pango, PangoCairo  # noqa: E402
+try:
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+except (ImportError, ValueError, AttributeError):
+    GdkPixbuf = None  # optional; only needed for SVG/JPEG/XPM/GIF icons
 import cairo  # noqa: E402
 
 FONT = "Noto Sans"
@@ -86,33 +91,68 @@ def text(cr, s, x, y, w, size, color=C_TEXT, bold=False, align="left", h=None, l
 
 
 _icon_cache: dict[str, str] = {}
+_reported_missing_icons: set[str] = set()
+
+
+def _pixbuf_png(source: str, dest: str) -> str:
+    """Decode non-PNG icons using GdkPixbuf when available.
+
+    Cairo's create_from_png() does not decode JPEG, XPM, SVG or GIF. Keeping
+    those paths unchanged made an existing icon look 'missing' and displayed
+    task title initials instead. GdkPixbuf converts them to actual PNG bytes.
+    """
+    if GdkPixbuf is None:
+        return ""
+    try:
+        img = GdkPixbuf.Pixbuf.new_from_file_at_scale(source, 128, 128, True)
+        if img is None:
+            return ""
+        img.savev(dest, "png", [], [])
+        if os.path.getsize(dest):
+            return dest
+    except Exception as exc:  # malformed external image must not break VR
+        log("pixbuf icon conversion failed", os.path.basename(source), exc)
+    return ""
 
 
 def icon_png(name):
-    """A PNG for an icon name or path (cached under ICONS), or '' if none resolves."""
+    """A real Cairo-readable PNG for an Icon= name or path, or ''.
+
+    Prefer the exact source. Import SVG/JPEG/XPM through GdkPixbuf; an older
+    SVG conversion via rsvg-convert/ImageMagick is retained when available.
+    Search misses are cached per renderer process to avoid repeated filesystem
+    scans for unknown app icons on every KWin task state update.
+    """
     if not name:
         return ""
     if name in _icon_cache:
         return _icon_cache[name]
     path = ""
-    if os.path.isabs(name) and name.endswith(".png") and os.path.isfile(name):
-        path = name
-    else:
-        safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)[-80:]
-        dest = os.path.join(ICONS, safe + ".png")
-        if os.path.isfile(dest):
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)[-80:]
+    dest = os.path.join(ICONS, safe + ".png")
+    if os.path.isfile(dest):
+        try:
+            cairo.ImageSurface.create_from_png(dest)
             path = dest
-        else:
-            try:
-                path = ft_desktop.ensure_raster_icon(name, dest, prefer_size=128) or ""
-                # ft-screens runs in the dev container, where host-only paths (Flatpak
-                # exports symlink into /var/lib/flatpak/app) don't resolve: hand it a copy
-                # in the runtime dir both sides share.
-                if path and path != dest and path.lower().endswith(".png"):
-                    shutil.copyfile(path, dest)
+        except (cairo.Error, OSError, ValueError):
+            path = ""
+    if not path:
+        try:
+            source = ft_desktop.resolve_icon_path(name, prefer_size=128, allow_svg=True)
+            if source:
+                ext = os.path.splitext(source)[1].lower()
+                if ext == ".png":
+                    if source != dest:
+                        shutil.copyfile(source, dest)
                     path = dest
-            except Exception as e:  # noqa: BLE001 — a broken icon must not break the menu
-                log("icon", name, e)
+                else:
+                    # GdkPixbuf handles raster formats and SVG (when librsvg
+                    # is installed), and also correctly preserves transparency.
+                    path = _pixbuf_png(source, dest)
+                    if not path and ext == ".svg":
+                        path = ft_desktop.convert_svg_to_png(source, dest, size=128) or ""
+        except Exception as exc:  # a bad app icon must not break VR
+            log("icon", name, exc)
     _icon_cache[name] = path
     return path
 
@@ -322,11 +362,20 @@ def task_tile(task: dict, dimension: int = 128):
     rounded(cr, 0, 0, dimension, dimension, dimension * 0.17)
     cr.set_source_rgb(*C_BG)
     cr.fill()
-    icon = icon_png(task.get("icon") or "")
-    if icon and draw_icon(cr, icon, 24, 22, 80):
-        pass
-    else:
-        # Fallback for windows without a FreeDesktop icon, not a blank tile.
+    names = task.get("icon_candidates") or [task.get("icon") or ""]
+    painted = False
+    for name in names:
+        icon = icon_png(name)
+        if icon and draw_icon(cr, icon, 24, 22, 80):
+            painted = True
+            break
+    if not painted:
+        # Deliberate last resort. Record why this app got title initials so
+        # we can add an exact desktop/icon mapping based on the Frame log.
+        identity = task.get("desktop_id") or task.get("id") or "unknown"
+        if identity not in _reported_missing_icons:
+            _reported_missing_icons.add(identity)
+            log("unresolved task icon", identity, "tried", names[:12])
         label = (task.get("name") or "?").strip()
         text(cr, label[:2].upper(), 26, 30, 76, 34, bold=True, align="center", h=70)
     if task.get("focused"):
