@@ -61,3 +61,27 @@ jobs:
           assert (p/"layout.txt").exists()
           print("Legacy Displays popup rendered OK:",width,"x",height)
           '
+      - name: Render a fake KWin running-task tile through original model
+        run: |
+          /usr/bin/python3 -c '
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          (p/"tasks.json").write_text(json.dumps({
+            "windows":[{"id":"1","caption":"Example App","cls":"example-app",
+                        "desktop":"org.example.Test","minimized":False,
+                        "output":"WL-0"}],
+            "active":"1","outputs":["WL-0"]}))
+          '
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind toolbar --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 -c '
+          import os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          assert len((p/"task-0.rgba").read_bytes())==128*128*4
+          layout=(p/"layout.txt").read_text().split()
+          assert len(layout)==4 and layout[-1]=="1",layout
+          tasks=(p/"tasks.txt").read_text().splitlines()
+          assert len(tasks)==1 and tasks[0].startswith("task "),tasks
+          print("Live-task layout and icon tile smoke test OK")
+          '
