@@ -378,31 +378,42 @@ class Manager:
                 dest = self.installed / pid
                 backup = self.installed / (".backup-" + pid)
                 moved = False
+                swapped = False
                 try:
                     rel = self._stage(meta, source, stage)
-                    if backup.exists():
+                    if backup.exists() or backup.is_symlink():
                         raise ManagerError(f"Old backup exists; inspect {backup}")
-                    if dest.exists():
+                    if dest.exists() or dest.is_symlink():
+                        if not dest.is_dir() or dest.is_symlink():
+                            raise ManagerError(f"Existing extension path is unsafe: {dest}")
                         dest.rename(backup)
                         moved = True
                     stage.rename(dest)
+                    swapped = True
                     state["installed"][pid] = {
                         "source": source["id"], "version": meta["version"],
                         "directory": rel, "enabled": old["enabled"] if old else False,
                     }
                     self._save(state)
-                    if backup.exists():
-                        shutil.rmtree(backup)
                 except Exception:
-                    if dest.exists() and moved:
+                    # Disk and state must stay consistent even if the atomic
+                    # config write fails after swapping the package directory.
+                    if swapped and dest.is_dir() and not dest.is_symlink():
                         shutil.rmtree(dest)
+                    if moved and backup.is_dir():
                         backup.rename(dest)
-                    elif not dest.exists() and moved and backup.exists():
-                        backup.rename(dest)
+                    if old is None:
+                        state["installed"].pop(pid, None)
+                    else:
+                        state["installed"][pid] = old
                     raise
                 finally:
                     if stage.exists():
                         shutil.rmtree(stage)
+                # Once both the snapshot and config commit, cleanup is only
+                # best-effort; cleanup failures must not undo a committed state.
+                if backup.is_dir() and not backup.is_symlink():
+                    shutil.rmtree(backup, ignore_errors=True)
             return order
 
     def uninstall(self, identity: str):
@@ -410,11 +421,18 @@ class Manager:
             state = self.read()
             if identity not in state["installed"]:
                 raise ManagerError("Extension is not installed")
-            # Refuse to orphan installed dependents.
-            for meta in self.catalog():
-                if (meta["installed"] and meta["id"] != identity and
-                        identity in meta["dependencies"]):
-                    raise ManagerError(f"Uninstall blocked: required by {meta['id']}")
+            # Inspect installed SNAPSHOTS, not the currently published catalog:
+            # a plugin must remain protected even if its source was removed.
+            for installed_id, record in state["installed"].items():
+                if installed_id == identity:
+                    continue
+                path = self.installed / installed_id / record["directory"] / "extension.json"
+                try:
+                    deps = _dependencies(load_manifest(path))
+                except (OSError, ValueError) as exc:
+                    raise ManagerError(f"Cannot verify dependencies of {installed_id}: {exc}") from exc
+                if identity in deps:
+                    raise ManagerError(f"Uninstall blocked: required by {installed_id}")
             target = self.installed / identity
             if not target.is_dir() or target.is_symlink():
                 raise ManagerError("Installed files missing/unsafe; refusing to delete")
@@ -436,6 +454,14 @@ class Manager:
             state = self.read()
             if identity not in state["installed"]:
                 raise ManagerError("Extension is not installed")
+            if not enabled:
+                # Refuse to disable dependencies needed by enabled plugins.
+                for other, record in state["installed"].items():
+                    if other == identity or not record["enabled"]:
+                        continue
+                    manifest_path = self.installed / other / record["directory"] / "extension.json"
+                    if identity in _dependencies(load_manifest(manifest_path)):
+                        raise ManagerError(f"Disable blocked: required by enabled {other}")
             if enabled:
                 # Protect against enabling a broken/missing dependency.
                 installed_ids = set(state["installed"])
