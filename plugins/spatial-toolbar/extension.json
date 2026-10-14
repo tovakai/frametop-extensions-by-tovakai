@@ -1,0 +1,19 @@
+{
+  "manifest_version": 1,
+  "id": "tovakai.spatial-toolbar",
+  "name": "Spatial Toolbar",
+  "version": "0.1.0",
+  "description": "Salvaged independent OpenVR toolbar, first Displays GUI slice",
+  "status": "experimental",
+  "min_extension_api": 1,
+  "required_capabilities": [
+    "screen.status",
+    "screen.move",
+    "screen.opacity"
+  ],
+  "optional_capabilities": [],
+  "dependencies": [
+    "tovakai.spatial-profiles"
+  ],
+  "entrypoint": "run.sh"
+}

@@ -319,8 +319,9 @@ def icon_theme_dirs():
     themes = []
     for data in xdg_data_dirs():
         themes.append(os.path.join(data, "icons"))
-    themes.append("/usr/share/pixmaps")
-    return themes
+    themes.extend(("/usr/share/pixmaps", "/run/host/usr/share/pixmaps",
+                   "/run/host/usr/local/share/pixmaps"))
+    return [p for i, p in enumerate(themes) if p not in themes[:i]]
 
 
 def _icon_basename_candidates(icon_name):
@@ -335,6 +336,23 @@ def _icon_basename_candidates(icon_name):
     return out
 
 
+def _host_icon_path(icon_name):
+    """Translate host absolute icons into the path visible inside distrobox.
+
+    Flatpak and AppImage desktop files frequently say
+    Icon=/var/lib/flatpak/app/... or /usr/share/...; the Fedora container
+    sees those files under /run/host. Never rewrite an existing path.
+    """
+    if not os.path.isabs(icon_name):
+        return icon_name
+    if os.path.isfile(icon_name):
+        return icon_name
+    if icon_name.startswith("/run/host/"):
+        return icon_name
+    host = "/run/host" + icon_name
+    return host if os.path.isfile(host) else icon_name
+
+
 def resolve_icon_path(icon_name, prefer_size=128, allow_svg=False):
     """Resolve a Desktop Entry Icon= value to a file path.
 
@@ -344,6 +362,8 @@ def resolve_icon_path(icon_name, prefer_size=128, allow_svg=False):
     icon_name = str(icon_name or "").strip()
     if not icon_name:
         return None
+    if os.path.isabs(icon_name):
+        icon_name = _host_icon_path(icon_name)
     if os.path.isabs(icon_name) and os.path.isfile(icon_name):
         ext = os.path.splitext(icon_name)[1].lower()
         if ext in (".png", ".jpg", ".jpeg", ".xpm", ".gif"):

@@ -20,8 +20,156 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Compile package
         run: |
-          python -m compileall -q sdk plugins tools tests
+          python -m compileall -q sdk plugins tools tests apps
+      - name: Syntax-check standalone OpenVR toolbar against pinned Valve header
+        if: matrix.python-version == '3.12'
+        run: |
+          curl --fail --location --silent --show-error --retry 2 \
+            https://raw.githubusercontent.com/ValveSoftware/openvr/v2.15.6/headers/openvr.h \
+            --output "${RUNNER_TEMP}/openvr.h"
+          g++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only -I"${RUNNER_TEMP}" \
+            plugins/spatial-toolbar/toolbar.cpp
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Plugin discovery
         run: python tools/list_extensions.py
+
+  popup-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install original Pango/Cairo rendering dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-gi-cairo python3-cairo gir1.2-pango-1.0 gir1.2-gdkpixbuf-2.0 librsvg2-common
+      - name: Render salvaged Displays popup with system Python
+        run: |
+          mkdir -p "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind toolbar --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 -c '
+          from pathlib import Path
+          import os
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          fields=(p/"popup.txt").read_text().splitlines()[0].split()
+          assert fields[:2]==["popup","profiles"], fields
+          width,height=int(fields[3]),int(fields[4])
+          assert len((p/"popup.rgba").read_bytes())==width*height*4
+          assert "popup:profiles" not in (p/"popup.txt").read_text()
+          assert (p/"layout.txt").exists()
+          print("Legacy Displays popup rendered OK:",width,"x",height)
+          '
+      - name: Render a fake KWin running-task tile through original model
+        run: |
+          /usr/bin/python3 -c '
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          (p/"tasks.json").write_text(json.dumps({
+            "windows":[{"id":"1","caption":"Example App","cls":"example-app",
+                        "desktop":"org.example.Test","minimized":False,
+                        "output":"WL-0"}],
+            "active":"1","outputs":["WL-0"]}))
+          '
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind toolbar --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 -c '
+          import os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          assert len((p/"task-0.rgba").read_bytes())==128*128*4
+          layout=(p/"layout.txt").read_text().split()
+          assert len(layout)==4 and layout[-1]=="1",layout
+          tasks=(p/"tasks.txt").read_text().splitlines()
+          assert len(tasks)==1 and tasks[0].startswith("task "),tasks
+          print("Live-task layout and icon tile smoke test OK")
+          '
+
+      - name: Verify fast Cairo byte conversion preserves original RGBA
+        run: |
+          /usr/bin/python3 -c '
+          import sys,time
+          sys.path.insert(0,"plugins/spatial-toolbar")
+          import cairo,menu
+          surface=cairo.ImageSurface(cairo.FORMAT_ARGB32,700,900)
+          cr=cairo.Context(surface)
+          cr.set_source_rgba(1.0,0.0,0.0,1.0)
+          cr.paint()
+          start=time.monotonic()
+          converted=menu.image_rgba(surface)
+          elapsed=time.monotonic()-start
+          assert len(converted)==700*900*4
+          assert converted[:4]==bytes((255,0,0,255)),converted[:4]
+          assert converted[-4:]==bytes((255,0,0,255)),converted[-4:]
+          print("Cairo 700x900 conversion:",round(elapsed,3),"s")
+          '
+      - name: Resolve and paint a non-PNG running-app icon
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import os,sys
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          sys.path.insert(0,"plugins/spatial-toolbar")
+          import menu, cairo
+          assert menu.GdkPixbuf is not None, "missing GdkPixbuf binding"
+          svg=root/"fake-task.svg"
+          svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="red"/></svg>')
+          menu.ICONS=str(root/"icons")
+          (root/"icons").mkdir(exist_ok=True)
+          surface=menu.task_tile({"id":"demo","name":"Inspector",
+                                  "icon_candidates":[str(svg)]})
+          result=root/"test-task.png"
+          surface.write_to_png(str(result))
+          rendered=cairo.ImageSurface.create_from_png(str(result))
+          assert rendered.get_width()==128
+          assert menu._icon_cache[str(svg)].endswith(".png"), menu._icon_cache
+          assert menu._icon_cache[str(svg)]!=""
+          print("Non-PNG SVG task icon decoded successfully")
+          PY
+      - name: Render original Start applications grid
+        run: |
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind start --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 -c '
+          import os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          head=(p/"popup.txt").read_text().splitlines()[0].split()
+          assert head[0:2]==["popup","start"],head
+          w,h=int(head[3]),int(head[4])
+          assert w>0 and h>0
+          assert len((p/"popup.rgba").read_bytes())==w*h*4
+          print("Legacy Start menu Pango/Cairo smoke test OK:",w,h)
+          '
+      - name: Exercise persistent renderer with real Cairo/Pango
+        run: |
+          export FT_TOOLBAR_TEST_DIR="${RUNNER_TEMP}/toolbar-popup"
+          chmod 700 "$FT_TOOLBAR_TEST_DIR"
+          FT_TOOLBAR_TRACE=1 /usr/bin/python3 plugins/spatial-toolbar/menu_worker.py serve \
+            --dir "$FT_TOOLBAR_TEST_DIR" > "$FT_TOOLBAR_TEST_DIR/menu-worker.log" 2>&1 &
+          worker=$!
+          trap 'kill "$worker" 2>/dev/null || true' EXIT
+          /usr/bin/python3 - <<'PY'
+          import os, sys, time
+          from pathlib import Path
+          sys.path.insert(0, "plugins/spatial-toolbar")
+          import menu_worker
+          d = Path(os.environ["FT_TOOLBAR_TEST_DIR"])
+          for _ in range(100):
+              try:
+                  menu_worker.request(d,"ping",timeout=.15)
+                  break
+              except (OSError,RuntimeError):
+                  time.sleep(.05)
+          else:
+              raise AssertionError("persistent renderer not ready")
+          started=time.perf_counter()
+          menu_worker.request(d,"render","start")
+          menu_worker.request(d,"activate","start","cat:all")
+          menu_worker.request(d,"render","start")
+          print("Warm renderer repeated Start/category duration:",
+                round(time.perf_counter()-started,3),"seconds")
+          menu_worker.request(d,"stop")
+          PY
+          wait "$worker"
+          cat "$FT_TOOLBAR_TEST_DIR/menu-worker.log"
