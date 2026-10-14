@@ -13,6 +13,12 @@ from typing import Callable
 
 HERE = Path(__file__).resolve().parent
 PROFILES_DIR = HERE.parent / "spatial-profiles"
+if not (PROFILES_DIR / "spatial_runtime.py").exists():
+    # The manager stages dependencies as independent snapshots.
+    PROFILES_DIR = (Path.home() / ".local/share/frametop/extensions" /
+                    "tovakai.spatial-profiles/plugins/spatial-profiles")
+if not (PROFILES_DIR / "spatial_runtime.py").is_file():
+    raise ImportError("Spatial Profiles extension required (install it first)")
 SDK_DIR = HERE.parents[1] / "sdk"
 sys.path.insert(0, str(PROFILES_DIR))
 sys.path.insert(0, str(SDK_DIR))
