@@ -241,22 +241,39 @@ void destroy(Surface& s) {
 int child_menu(const std::string& script,const std::string& directory,
                const char* action,const std::string& item="",bool detach=false,
                const char* kind="profiles") {
-    const pid_t pid=fork();
-    if(pid<0) return -1;
-    if(pid==0) {
-        if(detach) setsid();
-        if(item.empty())
-            execlp("python3","python3",script.c_str(),action,"--dir",directory.c_str(),
-                   "--kind",kind,(char*)nullptr);
-        else
-            execlp("python3","python3",script.c_str(),action,"--dir",directory.c_str(),
-                   "--kind",kind,"--item",item.c_str(),(char*)nullptr);
-        _exit(127);
+    (void)script; // Renderer is loaded once in menu_worker.py, not fork/exec'ed.
+    // All requests stay in the extension-owned private socket. No shell or
+    // process spawning on menu clicks. Async actions (desktop launch/profile
+    // switching) enqueue work without freezing controller input.
+    if(!action||!kind||item.size()>400 ||
+       item.find_first_of("\r\n\t")!=std::string::npos)return -1;
+    const std::string payload=std::string(action)+"\t"+kind+"\t"+item+"\n";
+    const std::string sockpath=directory+"/menu.sock";
+    if(sockpath.size()>=sizeof(sockaddr_un::sun_path))return -1;
+    const int fd=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
+    if(fd<0)return -1;
+    timeval timeLimit{};
+    timeLimit.tv_sec=3;
+    setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeLimit,sizeof(timeLimit));
+    setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeLimit,sizeof(timeLimit));
+    sockaddr_un addr{};
+    addr.sun_family=AF_UNIX;
+    std::memcpy(addr.sun_path,sockpath.c_str(),sockpath.size()+1);
+    const auto len=socklen_t(offsetof(sockaddr_un,sun_path)+sockpath.size()+1);
+    if(connect(fd,reinterpret_cast<sockaddr*>(&addr),len)!=0){
+        std::cerr<<"toolbar: renderer socket unavailable: "<<sockpath<<"\n";
+        ::close(fd);return -1;
     }
-    if(detach) return 0;
-    int status=0;
-    if(waitpid(pid,&status,0)<0) return -1;
-    return WIFEXITED(status)?WEXITSTATUS(status):-1;
+    const auto sent=send(fd,payload.data(),payload.size(),MSG_NOSIGNAL);
+    if(sent!=ssize_t(payload.size())){::close(fd);return -1;}
+    if(detach){::close(fd);return 0;}
+    char response[384]{};
+    const ssize_t got=recv(fd,response,sizeof(response)-1,0);
+    ::close(fd);
+    if(got>=3 && std::string(response,size_t(got)).rfind("ok\n",0)==0)return 0;
+    std::cerr<<"toolbar: renderer request "<<action<<"/"<<kind<<" failed: "
+             <<(got>0?response:"timeout/disconnected")<<"\n";
+    return -1;
 }
 bool load_layout(const std::string& directory,double& width,double& displayX,
                  double& startX,int& count) {
