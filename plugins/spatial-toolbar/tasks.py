@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import signal
+import socket
+import urllib.parse
 import sys
 import tempfile
 from pathlib import Path
@@ -16,6 +18,9 @@ from pathlib import Path
 import gi
 gi.require_version("GLib", "2.0")
 from gi.repository import GLib
+
+import ft_desktop
+import ft_taskbar_model as model
 try:
     import dbus
     import dbus.service
@@ -218,9 +223,44 @@ def main():
         log("Could not reach nested KWin D-Bus session")
         return 1
     notify()
+    # The original provider is retained for KWin window events. Our toolbar
+    # sends only a verified running task ID; no shell or script is accepted.
+    sock=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM)
+    sock.bind(b"\0tovakai_toolbar_tasks")
+    sock.setblocking(False)
+    def on_commands(_fd,_condition):
+        while True:
+            try:
+                message=sock.recv(2048).decode("utf-8","replace")
+            except BlockingIOError:
+                return True
+            except OSError:
+                return True
+            if not message.startswith("task "):
+                continue
+            task_id=urllib.parse.unquote(message[5:].strip())
+            try:
+                items=model.merge_tasks([],kwin.windows,ft_desktop.list_applications(),kwin.active)
+                task=next((t for t in items if t["id"]==task_id),None)
+                if not task:
+                    continue
+                action,arg=model.task_click(task)
+                if action=="focus":
+                    kwin.activate(arg)
+                elif action=="minimize":
+                    kwin.window_op("minimize",[arg])
+                elif action=="expose" and task["windows"]:
+                    kwin.activate(task["windows"][0]["id"])
+                elif action=="launch" and arg:
+                    with socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM) as launch:
+                        launch.sendto(("desktop "+arg).encode(),b"\0frametop_launch")
+            except Exception as exc:
+                log("task activation failed:",exc)
+    GLib.io_add_watch(sock.fileno(),GLib.IO_IN,on_commands)
     loop=GLib.MainLoop()
     def shutdown(*_):
         kwin.shutdown()
+        sock.close()
         loop.quit()
         return False
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT,signal.SIGTERM,shutdown)
