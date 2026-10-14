@@ -12,6 +12,17 @@ if [[ ! -x "$here/build/ft-toolbar" ]]; then
   exit 1
 fi
 
+# Refuse to launch an interactive overlay against a non-API Frametop instance.
+if ! PYTHONPATH="$here/../../sdk" python3 -c '
+from frametop_ext import Frametop
+ft = Frametop()
+assert ft.api_version() >= 1
+assert {"screen.status","screen.move","screen.opacity"} <= set(ft.capabilities())
+' ; then
+    echo "Spatial Toolbar: running Frametop extension API v1 is required." >&2
+    exit 1
+fi
+
 runtime="/run/user/$(id -u)/frametop-spatial-toolbar"
 mkdir -p -- "$runtime"
 chmod 700 -- "$runtime"
