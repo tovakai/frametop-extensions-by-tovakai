@@ -111,6 +111,39 @@ class HostContracts(unittest.TestCase):
         self.assertIn("org.tovakai.SpatialToolbar",provider)
         self.assertIn('sock.bind(b"\\0tovakai_toolbar_tasks")',provider)
 
+    def test_grab_matches_upstream_pill_and_thumbstick_depth_control(self):
+        code=(DIR/"toolbar.cpp").read_text()
+        # Frametop/frametop screens/vr.cpp BarTexture defaults and proportions:
+        # 256x24, normal grey 235/210, active blue 90/170/255/240.
+        self.assertIn("pill_texture(256,24,235,235,235,210)",code)
+        self.assertIn("pill_texture(256,24,90,170,255,240)",code)
+        self.assertIn("grab_texture(false),256,24,.30f,true,3",code)
+        self.assertIn("const double gripHeight=gripWidth*(24.0/256.0)",code)
+        self.assertIn("light_grab(hoverGrab||dragging)",code)
+        self.assertIn("light_grab(true)",code)
+        self.assertIn("light_grab(false)",code)
+        # This flag is essential for SteamVR to deliver controller thumbstick
+        # scrolling while the user is holding the toolbar grab trigger.
+        self.assertIn("grab.handle,vr::VROverlayFlags_SendVRDiscreteScrollEvents,true",code)
+        self.assertIn("ev.eventType==vr::VREvent_ScrollDiscrete&&dragging",code)
+        self.assertIn("push_drag(ev.data.scroll.ydelta)",code)
+        # Push along headset -> toolbar (not along controller local Z), and
+        # update controller-relative drag transform so moving your hand after
+        # scrolling remains seamless. These values match upstream Push().
+        drag=code.split("    void push_drag(double notches){")[1].split(
+            "    void drag_start(",1)[0]
+        self.assertIn("const double length=std::sqrt(dx*dx+dy*dy+dz*dz)",drag)
+        self.assertIn("length*(1.+.08*notches)",drag)
+        self.assertIn("std::clamp(length*(1.+.08*notches),.3,10.)",drag)
+        self.assertIn("dragRel=mul(inverse(controller),pose)",drag)
+        self.assertIn("drag_tick();",drag)
+        self.assertNotIn("dragRel.m[2][3]",drag)
+        # Don't upload a fresh grab texture on every frame; that caused
+        # disappearing-but-clickable icons in the original monolithic toolbar.
+        light=code.split("    void light_grab(bool lit){")[1].split(
+            "    void push_drag(",1)[0]
+        self.assertIn("if(grabLit==lit)return;",light)
+
     def test_original_cairo_renderer_has_explicit_container_setup(self):
         dependencies=(DIR/"install-renderer-deps.sh").read_text()
         launcher=(DIR/"run.sh").read_text()
