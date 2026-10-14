@@ -2,15 +2,15 @@
   "manifest_version": 1,
   "id": "tovakai.spatial-profiles",
   "name": "Spatial Profiles",
-  "version": "0.0.1",
-  "description": "Read-only inspection of legacy six-slot spatial profiles (full plugin pending)",
-  "status": "prototype",
+  "version": "0.1.0",
+  "description": "Capture and switch world-anchored spatial layouts with six named slots",
+  "status": "experimental",
   "min_extension_api": 1,
-  "required_capabilities": [],
-  "optional_capabilities": [
+  "required_capabilities": [
     "screen.status",
     "screen.opacity",
     "screen.move"
   ],
+  "optional_capabilities": [],
   "entrypoint": "profiles.py"
 }
