@@ -77,4 +77,5 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 "$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
+    "FT_TOOLBAR_TRACE=${FT_TOOLBAR_TRACE:-0}" \
     "$here/build/ft-toolbar" "$here/menu.py" "$runtime"
