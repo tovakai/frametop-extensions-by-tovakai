@@ -16,6 +16,7 @@ import urllib.parse
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import ft_desktop  # noqa: E402
+import ft_toolbar  # noqa: E402
 import ft_taskbar_model as model  # noqa: E402
 import toolbar_profiles  # noqa: E402
 
@@ -324,6 +325,12 @@ def main(argv=None):
     write_atomic(directory / "popup.rgba", image_rgba(surface), "wb")
     write_atomic(directory / "popup.txt", model.items_text(
         "profiles", 1, layout, 0.49))
+    # Use the ORIGINAL toolbar packing, not guessed C++ button coordinates.
+    positions = dict((name, pos) for _, name, pos in ft_toolbar.button_local_x(
+        ft_toolbar.DEFAULT_GROUPS))
+    write_atomic(directory / "layout.txt", "%0.6f %0.6f\n" % (
+        ft_toolbar.toolbar_total_width(ft_toolbar.DEFAULT_GROUPS),
+        positions["popup:profiles"]))
     return 0
 
 
