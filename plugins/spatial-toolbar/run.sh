@@ -44,11 +44,31 @@ if ! "$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
     echo "Then re-run this toolbar; no rebuild or SteamVR restart is needed." >&2
     exit 1
 fi
-echo "Running the independent Displays toolbar. Press Ctrl+C to stop."
+echo "Running the independent Spatial Toolbar. Press Ctrl+C to stop."
 echo "Fallback: python3 $here/control.py stop"
+# The old KWin watcher must run on the SteamOS host's NESTED Plasma session
+# bus, not inside the OpenVR build container. It never edits Frametop core.
+task_pid=""
+python3 "$here/tasks.py" > "$runtime/tasks.log" 2>&1 &
+task_pid=$!
+sleep .2
+if ! kill -0 "$task_pid" 2>/dev/null; then
+    echo "Toolbar task watcher did not start (running app icons unavailable):" >&2
+    cat "$runtime/tasks.log" >&2
+    task_pid=""
+else
+    echo "Standalone KWin task provider started (PID $task_pid)."
+fi
 # Frametop's distrobox wrapper does NOT forward process signals reliably.
-# On every launcher exit, ask the plugin process itself to dispose its overlays.
-trap 'python3 "$here/control.py" stop >/dev/null 2>&1 || true' EXIT
+# Cleanup both independently owned helpers; do not touch ft-screens/SteamVR.
+cleanup() {
+    python3 "$here/control.py" stop >/dev/null 2>&1 || true
+    if [[ -n "$task_pid" ]]; then
+        kill "$task_pid" 2>/dev/null || true
+        wait "$task_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 "$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
