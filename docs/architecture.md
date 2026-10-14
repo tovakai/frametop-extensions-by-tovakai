@@ -6,7 +6,7 @@ Frametop fork (`tovakai/frametop`, branch `rebuild/extension-api`) owns the gene
 
 The extension API draft v1 uses Frametop's existing abstract UNIX datagram control socket (`@ft_screens`). Extensions discover its version and capabilities. Initial capabilities: `screen.status`, `screen.opacity` and `screen.move`. A companion Python SDK lives in `sdk/frametop_ext`.
 
-There is **no dynamic plugin loader or stable external event stream yet**. Manifest discovery here is metadata-only, with no execution or installation side effects. Do not call these extensions installable until a tested, reversible installer exists.
+There is **no dynamic plugin loader or stable external event stream yet**. The optional Extension Manager is a separately installed Kirigami settings app. It can browse GitHub sources and stage/copy individual extension snapshots, but manifest discovery and installation never execute plugin entrypoints; managed `enabled` state is metadata only. The manager does not run a plugin lifecycle service yet.
 
 ## Planned separation
 
@@ -31,3 +31,7 @@ A future manager may install optional extensions into `~/.local/share/frametop/e
 5. Verify upstream sync doesn't break the contract.
 
 Never overwrite `~/.config/frametop-layout-profiles.json` on first run. Legacy data is read-only until the user explicitly opts into a migration.
+
+## Independent extension manager
+
+The self-contained app in `apps/extension-manager/` installs its own application menu entry; it never edits Frametop core or its session. Its default catalog is the current `frametop-extensions-by-tovakai` checkout. Additional GitHub repos are cloned only after explicit user action. Installed packages are independent, versioned snapshots in `~/.local/share/frametop/extensions/<id>/`. The manager reuses existing Frametop Kirigami dependencies through `scripts/in-box` without changing core. Its CLI works without Qt. Live GUI hardware validation is pending.
