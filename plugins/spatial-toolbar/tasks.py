@@ -21,6 +21,7 @@ from gi.repository import GLib
 
 import ft_desktop
 import ft_taskbar_model as model
+from nested_bus import discover, NestedSessionError
 try:
     import dbus
     import dbus.service
@@ -208,7 +209,24 @@ def main():
     if dbus is None:
         log("python3-dbus is missing; running-task icons unavailable")
         return 1
+    # Frametop starts nested KWin under a separate dbus-run-session. Never
+    # inherit an SSH or host-terminal bus, even if it happens to be valid.
+    try:
+        nested = discover()
+    except NestedSessionError as exc:
+        log("nested D-Bus unavailable:", exc)
+        return 1
+    os.environ.update(nested)
     DBusGMainLoop(set_as_default=True)
+    try:
+        probe = dbus.SessionBus()
+        if not probe.name_has_owner("org.kde.KWin"):
+            log("nested bus found, but org.kde.KWin has no owner yet")
+            return 1
+    except Exception as exc:
+        log("nested KWin D-Bus check failed:", exc)
+        return 1
+    log("using nested Frametop KWin private session bus")
     runtime=Path(RUN)
     runtime.mkdir(parents=True,exist_ok=True,mode=0o700)
     def notify():
