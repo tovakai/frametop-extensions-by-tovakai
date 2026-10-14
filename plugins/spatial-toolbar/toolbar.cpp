@@ -352,188 +352,367 @@ bool tracked_pose(vr::TrackedDeviceIndex_t index,Mat& out) {
     return true;
 }
 class Toolbar {
-    std::string script,dir;
-    Surface backdrop,display,popup;
-    int control=-1;
+    std::string script,dir,popupKind;
+    Surface backdrop,start,display,grab,popup;
+    std::vector<TaskButton> tasks;
+    int activeTasks=0,control=-1,popupW=0,popupH=0;
     std::vector<Item> items;
-    Mat base=identity(),head=identity();
+    Mat base=identity(),head=identity(),dragRel=identity();
     Arch a;
-    double width=.9,buttonX=.2,popupMetres=.49,curve=.75;
-    int popupW=0,popupH=0;
-    bool shown=false,hover=false;
-    std::chrono::steady_clock::time_point nextTime{};
+    double width=.90,buttonX=.20,startX=-.38,popupMetres=.49,curve=.75;
+    double anchorX=0;
+    int backingTextureH=0;
+    bool shown=false,hoverStart=false,hoverDisplay=false,hoverGrab=false,dragging=false;
+    vr::TrackedDeviceIndex_t dragDevice=vr::k_unTrackedDeviceIndexInvalid;
+    std::filesystem::file_time_type lastTasksTime{};
+    std::chrono::steady_clock::time_point nextTaskPoll{};
 public:
     Toolbar(std::string p,std::string d):script(std::move(p)),dir(std::move(d)){}
     ~Toolbar(){
         close();
-        destroy(popup);destroy(display);destroy(backdrop);
-        if(control>=0) ::close(control);
+        for(auto &t:tasks)destroy(t.surface);
+        destroy(popup);destroy(grab);destroy(start);destroy(display);destroy(backdrop);
+        if(control>=0)::close(control);
     }
-    void close() {shown=false;show(popup,false);}
+    void close() {
+        shown=false;
+        popupKind.clear();
+        items.clear();
+        show(popup,false);
+    }
+    Mat visual_pose()const{
+        const double pitch=std::clamp(-std::atan2(.40,.75)*180/PI-TILT_BACK,-70.,45.);
+        return mul(base,panel_pose(0,0,0,0,pitch,0));
+    }
+    void place(){
+        auto *ov=vr::VROverlay();
+        const Mat visual=visual_pose();
+        const Mat bp=mul(visual,translation(0,(a.top+a.bottom)/2,0));
+        ov->SetOverlayWidthInMeters(backdrop.handle,float(a.width));
+        ov->SetOverlayCurvature(backdrop.handle,
+            float(std::clamp(width/(2*PI*curve),0.,1.)));
+        ov->SetOverlayTransformAbsolute(backdrop.handle,vr::TrackingUniverseStanding,&bp);
+        const auto cell=[&](Surface& surface,double x,double size){
+            if(surface.handle==vr::k_ulOverlayHandleInvalid)return;
+            const Mat p=mul(visual,on_arch(a,x,BTN_DZ,true,curve));
+            ov->SetOverlayWidthInMeters(surface.handle,float(size));
+            ov->SetOverlayTransformAbsolute(surface.handle,vr::TrackingUniverseStanding,&p);
+        };
+        cell(start,startX,BAR_H*(150.0/180.0)*.9);
+        cell(display,buttonX,BUTTON_WIDTH);
+        for(int i=0;i<activeTasks;++i)cell(tasks[size_t(i)].surface,tasks[size_t(i)].x,
+                                               BAR_H*(150.0/180.0)*.9);
+        const double gripWidth=.24;
+        const double gripHeight=gripWidth*(40.0/256.0);
+        const double gripY=-(BAR_H/2+.012+gripHeight/2);
+        const Mat gp=mul(visual,translation(0,gripY,BTN_DZ));
+        ov->SetOverlayWidthInMeters(grab.handle,float(gripWidth));
+        ov->SetOverlayTransformAbsolute(grab.handle,vr::TrackingUniverseStanding,&gp);
+        if(shown)place_popup();
+    }
+    void place_popup(){
+        Mat eye{};
+        if(hmd_pose(eye))head=eye;
+        const Mat at=mul(visual_pose(),on_arch(a,anchorX,.030,false,curve));
+        const double popupHeight=popupMetres*popupH/std::max(1,popupW);
+        const Mat pose=mul(facing_head(at,head),
+                            translation(0,BAR_H/2+.018+popupHeight/2,0));
+        auto *ov=vr::VROverlay();
+        ov->SetOverlayWidthInMeters(popup.handle,float(popupMetres));
+        ov->SetOverlayTransformAbsolute(popup.handle,vr::TrackingUniverseStanding,&pose);
+    }
+    bool update_bar(bool first=false) {
+        if(child_menu(script,dir,"render","",false,"toolbar")!=0){
+            std::cerr<<"toolbar: Python task/layout renderer failed\n";return false;
+        }
+        double nextWidth=0,nextDisplay=0,nextStart=0;
+        int count=0;
+        if(!load_layout(dir,nextWidth,nextDisplay,nextStart,count)){
+            std::cerr<<"toolbar: invalid toolbar layout\n";return false;
+        }
+        std::ifstream list(dir+"/tasks.txt");
+        std::vector<std::pair<std::string,double>> wanted;
+        for(int i=0;i<count;++i){
+            std::string tag,id;double x=0;
+            if(!(list>>tag>>id>>x)||tag!="task"||!std::isfinite(x)){
+                std::cerr<<"toolbar: invalid task tile layout\n";return false;
+            }
+            wanted.emplace_back(id,x);
+        }
+        const Arch nextArch=arch(nextWidth);
+        const int bh=std::max(8,int(std::lround(BW*
+                                  (nextArch.top-nextArch.bottom)/nextArch.width)));
+        if(!first&&(backingTextureH!=bh || std::fabs(nextWidth-width)>.001)){
+            const auto image=arch_texture(nextArch,BW,bh);
+            auto err=vr::VROverlay()->SetOverlayRaw(backdrop.handle,
+                                                     (void*)image.data(),BW,bh,4);
+            if(err!=vr::VROverlayError_None){
+                std::cerr<<"toolbar: keeping last valid backing texture (upload refused)\n";
+                return false;
+            }
+            const vr::HmdVector2_t ms={{float(BW),float(bh)}};
+            vr::VROverlay()->SetOverlayMouseScale(backdrop.handle,&ms);
+        }
+        for(int i=0;i<count;++i) {
+            std::vector<uint8_t> rgba;
+            if(!load_pixels(dir+"/task-"+std::to_string(i)+".rgba",
+                            size_t(128)*128*4,rgba)) {
+                std::cerr<<"toolbar: missing task icon "<<i<<"\n";return false;
+            }
+            if(i>=int(tasks.size())){
+                tasks.emplace_back();
+                auto &t=tasks.back();
+                const std::string key="tovakai.spatial-toolbar.task."+std::to_string(i);
+                if(!create(t.surface,key.c_str(),"Running application",rgba,128,128,
+                           .075f,true,3))return false;
+            }else{
+                // Stable pooled OpenVR handles. NEVER recreate on task changes.
+                auto &t=tasks[size_t(i)];
+                if(t.id!=wanted[size_t(i)].first) {
+                    const auto err=vr::VROverlay()->SetOverlayRaw(t.surface.handle,
+                                                     rgba.data(),128,128,4);
+                    if(err!=vr::VROverlayError_None){
+                        std::cerr<<"toolbar: task texture upload refused; retaining previous\n";
+                        continue; // don't update ID to mismatch old icon and click target
+                    }
+                    const vr::HmdVector2_t ms={{128.f,128.f}};
+                    vr::VROverlay()->SetOverlayMouseScale(t.surface.handle,&ms);
+                }
+            }
+            tasks[size_t(i)].id=wanted[size_t(i)].first;
+            tasks[size_t(i)].x=wanted[size_t(i)].second;
+        }
+        for(size_t i=size_t(count);i<tasks.size();++i)show(tasks[i].surface,false);
+        width=nextWidth;buttonX=nextDisplay;startX=nextStart;
+        a=nextArch;backingTextureH=bh;activeTasks=count;
+        if(!first)place();
+        return true;
+    }
     bool setup(){
         control=socket(AF_UNIX,SOCK_DGRAM|SOCK_NONBLOCK,0);
         if(control<0){std::perror("toolbar: control socket");return false;}
-        sockaddr_un addr{};
-        addr.sun_family=AF_UNIX;
+        sockaddr_un addr{};addr.sun_family=AF_UNIX;
         const char name[]="tovakai_toolbar_control";
         std::memcpy(addr.sun_path+1,name,sizeof(name)-1);
         const auto length=socklen_t(offsetof(sockaddr_un,sun_path)+sizeof(name));
         if(bind(control,reinterpret_cast<sockaddr*>(&addr),length)!=0){
-            std::perror("toolbar: control socket already bound");
-            return false;
+            std::perror("toolbar: control socket already bound");return false;
         }
-        // Independent OpenVR overlay applications can connect before SteamVR
-        // publishes a valid tracking pose. The compositor polls every tick;
-        // don't make our startup depend on a single instantaneous reading.
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
-        auto next_report=std::chrono::steady_clock::now();
-        HmdDiagnostic tracking{};
-        bool ready=false;
-        int samples=0;
-        while(!stop && std::chrono::steady_clock::now()<deadline){
-            if(hmd_pose(head,&tracking)){
-                ready=true;
-                break;
-            }
-            if(std::chrono::steady_clock::now()>=next_report){
+        auto nextReport=std::chrono::steady_clock::now();
+        HmdDiagnostic tracking{};bool ready=false;int retries=0;
+        while(!stop&&std::chrono::steady_clock::now()<deadline){
+            if(hmd_pose(head,&tracking)){ready=true;break;}
+            if(std::chrono::steady_clock::now()>=nextReport){
                 std::cerr<<"toolbar: waiting for HMD tracking (connected="
                          <<int(tracking.connected)<<", pose_valid="<<int(tracking.valid)
                          <<", tracking="<<tracking_name(tracking.tracking)
                          <<", VRSystem connected="
-                         <<int(vr::VRSystem()->IsTrackedDeviceConnected(vr::k_unTrackedDeviceIndex_Hmd))
-                         <<")\n";
-                next_report=std::chrono::steady_clock::now()+std::chrono::seconds(3);
+                         <<int(vr::VRSystem()->IsTrackedDeviceConnected(
+                                  vr::k_unTrackedDeviceIndex_Hmd))<<")\n";
+                nextReport=std::chrono::steady_clock::now()+std::chrono::seconds(3);
             }
-            // Keep the extension's stop command responsive even during startup.
             char message[24]{};
-            const ssize_t got=recv(control,message,sizeof(message),0);
-            if(got==4 && std::memcmp(message,"stop",4)==0){stop=1;break;}
+            const ssize_t n=recv(control,message,sizeof(message),0);
+            if(n==4&&std::memcmp(message,"stop",4)==0){stop=1;break;}
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            ++samples;
+            ++retries;
         }
         if(!ready){
-            std::cerr<<"toolbar: no valid HMD pose after "<<samples
-                     <<" tracking polls. Put on/wake the headset; verify tracking in SteamVR."
-                     <<" If Frametop screens are tracked normally, report the tracking"
-                     <<" diagnostics above (a separate OpenVR client may be missing poses).\n";
+            std::cerr<<"toolbar: no valid HMD pose after "<<retries
+                     <<" polls. Wake headset and verify tracking.\n";
             return false;
         }
-        std::cerr<<"toolbar: HMD tracking ready after "<<samples<<" retries\n";
+        std::cerr<<"toolbar: HMD tracking ready after "<<retries<<" retries\n";
         const double heading=std::atan2(head.m[0][2],head.m[2][2])*180/PI;
-        const double dx=-std::sin(heading*PI/180),dz=-std::cos(heading*PI/180);
-        base=panel_pose(head.m[0][3]+dx*.75,head.m[1][3]-.40,
-                        head.m[2][3]+dz*.75,heading,0,0);
-        if(child_menu(script,dir,"render")!=0 || !load_layout(dir,width,buttonX)){
-            std::cerr<<"toolbar: popup renderer/layout failed; check Python Pango/Cairo\n";return false;
-        }
-        a=arch(width);
-        const int bh=std::max(8,int(std::lround(BW*(a.top-a.bottom)/a.width)));
+        base=panel_pose(head.m[0][3]-std::sin(heading*PI/180)*.75,
+                        head.m[1][3]-.40,
+                        head.m[2][3]-std::cos(heading*PI/180)*.75,
+                        heading,0,0);
+        // The Python layout is computed first, but NO overlay is created
+        // until the complete Start/Tasks/Displays geometry is known.
+        if(!update_bar(true))return false;
+        const auto image=arch_texture(a,BW,backingTextureH);
         if(!create(backdrop,"tovakai.spatial-toolbar.backing","Frametop Toolbar",
-                   arch_texture(a,BW,bh),BW,bh,float(a.width),false,1))return false;
+                   image,BW,backingTextureH,float(a.width),false,1))return false;
+        if(!create(start,"tovakai.spatial-toolbar.start","Frametop Start",
+                   start_button(),CW,CW,.075f,true,3))return false;
         if(!create(display,"tovakai.spatial-toolbar.displays","Frametop Displays",
                    monitor_button(),CW,CW,float(BUTTON_WIDTH),true,3))return false;
-        auto *ov=vr::VROverlay();
-        ov->SetOverlayCurvature(backdrop.handle,
-             float(std::clamp(width/(2*PI*curve),0.,1.)));
-        const double pitch=std::clamp(-std::atan2(.40,.75)*180/PI-TILT_BACK,-70.,45.);
-        Mat p=mul(base,panel_pose(0,0,0,0,pitch,0));
-        const Mat bp=mul(p,translation(0,(a.top+a.bottom)/2,0));
-        ov->SetOverlayTransformAbsolute(backdrop.handle,vr::TrackingUniverseStanding,&bp);
-        const Mat cell=mul(p,on_arch(a,buttonX,BTN_DZ,true,curve));
-        ov->SetOverlayTransformAbsolute(display.handle,vr::TrackingUniverseStanding,&cell);
-        // Popup gets a proper texture and mouse-scale only when opened.
+        if(!create(grab,"tovakai.spatial-toolbar.grab","Toolbar move handle",
+                   grab_texture(),256,40,.24f,true,3))return false;
         const std::vector<uint8_t> blank(4*4*4,0);
-        if(!create(popup,"tovakai.spatial-toolbar.popup","Frametop Displays menu",
+        if(!create(popup,"tovakai.spatial-toolbar.popup","Frametop Toolbar Menu",
                    blank,4,4,.49f,true,4))return false;
-        show(backdrop,true);show(display,true);
-        nextTime=std::chrono::steady_clock::now()+std::chrono::milliseconds(250);
+        // The old task renderer may have written icons before overlay startup.
+        // Request one refresh now that the backing/controls exist.
+        if(!update_bar(false))return false;
+        place();
+        show(backdrop,true);show(start,true);show(display,true);show(grab,true);
+        for(int i=0;i<activeTasks;++i)show(tasks[size_t(i)].surface,true);
+        nextTaskPoll=std::chrono::steady_clock::now()+std::chrono::seconds(2);
         return true;
     }
-    void open(){
-        if(shown){close();return;}
-        if(child_menu(script,dir,"render")!=0){std::cerr<<"toolbar: menu renderer failed\n";return;}
-        std::vector<uint8_t> bytes;
-        std::vector<Item> newItems;
+    void open(const std::string& kind,double x,bool toggle=true){
+        if(toggle&&shown&&popupKind==kind){close();return;}
+        if(kind!="start"&&kind!="profiles")return;
+        if(child_menu(script,dir,"render","",false,kind.c_str())!=0){
+            std::cerr<<"toolbar: "<<kind<<" popup render failed\n";return;
+        }
+        std::vector<uint8_t> pixels;
+        std::vector<Item> boxes;
         int w=0,h=0;double metres=0;
-        if(!load_popup(dir,bytes,w,h,metres,newItems)){
-            std::cerr<<"toolbar: malformed popup files\n";return;
+        if(!load_popup(dir,kind,pixels,w,h,metres,boxes)){
+            std::cerr<<"toolbar: invalid "<<kind<<" popup buffer\n";return;
         }
         auto *ov=vr::VROverlay();
-        const auto err=ov->SetOverlayRaw(popup.handle,bytes.data(),uint32_t(w),uint32_t(h),4);
+        const auto err=ov->SetOverlayRaw(popup.handle,pixels.data(),uint32_t(w),uint32_t(h),4);
         if(err!=vr::VROverlayError_None){
-            std::fprintf(stderr,"toolbar: popup texture rejected: %s\n",
-                         ov->GetOverlayErrorNameFromEnum(err));return;
+            std::cerr<<"toolbar: popup texture rejected; old texture retained\n";return;
         }
-        const vr::HmdVector2_t ms={{float(w),float(h)}};
-        ov->SetOverlayMouseScale(popup.handle,&ms);
-        popupW=w;popupH=h;popupMetres=metres;items=std::move(newItems);
-        Mat eye{};
-        if(hmd_pose(eye))head=eye;
-        const double heading=std::atan2(base.m[0][2],base.m[2][2])*180/PI;
-        const double pitch=std::clamp(-std::atan2(.40,.75)*180/PI-TILT_BACK,-70.,45.);
-        (void)heading;
-        const Mat visual=mul(base,panel_pose(0,0,0,0,pitch,0));
-        const Mat at=mul(visual,on_arch(a,buttonX,.030,false,curve));
-        const double popupHeight=popupMetres*popupH/popupW;
-        const Mat pose=mul(facing_head(at,head),
-                          translation(0,BAR_H/2+.018+popupHeight/2,0));
-        ov->SetOverlayWidthInMeters(popup.handle,float(popupMetres));
-        ov->SetOverlayTransformAbsolute(popup.handle,vr::TrackingUniverseStanding,&pose);
-        shown=true;show(popup,true);
+        const vr::HmdVector2_t mouseScale={{float(w),float(h)}};
+        ov->SetOverlayMouseScale(popup.handle,&mouseScale);
+        popupW=w;popupH=h;popupMetres=metres;items=std::move(boxes);
+        anchorX=x;popupKind=kind;shown=true;
+        place_popup();show(popup,true);
     }
-    void click(int x,int y) {
+    void click(int x,int y){
         for(auto it=items.rbegin();it!=items.rend();++it){
             if(x<it->x||x>=it->x+it->w||y<it->y||y>=it->y+it->h)continue;
-            std::cerr<<"toolbar: activating Displays item "<<it->id<<"\n";
-            // Never run commands through a shell; a user click produces one
-            // argument to the trusted local Python action adapter.
-            child_menu(script,dir,"activate",it->id,true);
+            const std::string kind=popupKind,item=it->id;
+            std::cerr<<"toolbar: "<<kind<<" click "<<item<<"\n";
+            // Pagination/category changes refresh the same existing popup.
+            const bool refresh=(kind=="start"&&
+                (item.rfind("cat:",0)==0||item.rfind("page:",0)==0));
+            if(refresh){
+                if(child_menu(script,dir,"activate",item,false,kind.c_str())==0)
+                    open(kind,anchorX,false);
+                return;
+            }
+            child_menu(script,dir,"activate",item,true,kind.c_str());
             close();
             return;
         }
         close();
     }
+    void drag_start(vr::TrackedDeviceIndex_t index){
+        Mat controller{};
+        if(dragging||!tracked_pose(index,controller)){
+            std::cerr<<"toolbar: drag ignored (controller pose unavailable)\n";return;
+        }
+        dragRel=mul(inverse(controller),base);
+        dragDevice=index;dragging=true;
+        close();std::cerr<<"toolbar: drag started on controller "<<index<<"\n";
+    }
+    void drag_end(vr::TrackedDeviceIndex_t index){
+        if(!dragging||dragDevice!=index)return;
+        dragging=false;
+        dragDevice=vr::k_unTrackedDeviceIndexInvalid;
+        Mat h{};
+        if(hmd_pose(h))curve=std::clamp(std::hypot(
+            double(h.m[0][3]-base.m[0][3]),
+            double(h.m[2][3]-base.m[2][3])),.45,4.0);
+        place();
+        std::cerr<<"toolbar: drag released; position remains world-anchored\n";
+    }
+    void drag_tick(){
+        if(!dragging)return;
+        Mat controller{};
+        if(!tracked_pose(dragDevice,controller))return;
+        const Mat carried=mul(controller,dragRel);
+        const double yaw=std::atan2(carried.m[0][2],carried.m[2][2])*180/PI;
+        base=panel_pose(carried.m[0][3],carried.m[1][3],carried.m[2][3],yaw,0,0);
+        place();
+    }
+    void set_visible(bool visible){
+        if(!visible){close();dragging=false;}
+        show(backdrop,visible);
+        show(start,visible);show(display,visible);show(grab,visible);
+        for(int i=0;i<activeTasks;++i)show(tasks[size_t(i)].surface,visible);
+    }
+    void maybe_refresh_tasks(){
+        const auto now=std::chrono::steady_clock::now();
+        if(now<nextTaskPoll||dragging)return;
+        nextTaskPoll=now+std::chrono::seconds(2);
+        std::error_code err;
+        const auto time=std::filesystem::last_write_time(dir+"/tasks.json",err);
+        if(err||time==lastTasksTime)return;
+        if(update_bar(false)){
+            lastTasksTime=time;
+            for(int i=0;i<activeTasks;++i)show(tasks[size_t(i)].surface,true);
+            std::cerr<<"toolbar: task feed now has "<<activeTasks<<" tiles\n";
+        }
+    }
     void loop(){
         auto *ov=vr::VROverlay();
+        bool lastShown=true;
         while(!stop){
             char command[24]{};
-            const ssize_t n=recv(control,command,sizeof(command),0);
-            if(n==4 && std::memcmp(command,"stop",4)==0){
-                stop=1;
-                break;
-            }
-            // Yields to the Steam Dashboard and scene applications: don't leave
-            // hitboxes invisibly blocking controllers outside the desktop.
+            if(recv(control,command,sizeof(command),0)==4 &&
+               std::memcmp(command,"stop",4)==0){stop=1;break;}
             const bool dashboard=ov->IsDashboardVisible();
-            const char* override_scene=std::getenv("FT_TOOLBAR_ALLOW_SCENE");
-            const bool allow_scene=override_scene && override_scene[0]=='1';
-            const bool scene=!allow_scene && vr::VRApplications() &&
+            const char* overrideScene=std::getenv("FT_TOOLBAR_ALLOW_SCENE");
+            const bool allowScene=overrideScene&&overrideScene[0]=='1';
+            const bool scene=!allowScene&&vr::VRApplications()&&
                 vr::VRApplications()->GetCurrentSceneProcessId()!=0;
-            if(dashboard||scene){
-                if(shown)close();
-                show(backdrop,false);show(display,false);
-            }else{
-                show(backdrop,true);show(display,true);
+            const bool visible=!(dashboard||scene);
+            if(visible!=lastShown){set_visible(visible);lastShown=visible;}
+            if(visible) {
+                maybe_refresh_tasks();
+                drag_tick();
             }
             vr::VREvent_t ev{};
-            while(ov->PollNextOverlayEvent(display.handle,&ev,sizeof(ev))){
-                if(dashboard||scene) continue;
-                if(ev.eventType==vr::VREvent_MouseMove ||
-                   ev.eventType==vr::VREvent_FocusEnter)hover=true;
-                if(ev.eventType==vr::VREvent_FocusLeave)hover=false;
+            while(ov->PollNextOverlayEvent(start.handle,&ev,sizeof(ev))){
+                if(!visible)continue;
+                if(ev.eventType==vr::VREvent_FocusEnter||ev.eventType==vr::VREvent_MouseMove)
+                    hoverStart=true;
+                if(ev.eventType==vr::VREvent_FocusLeave)hoverStart=false;
                 if(ev.eventType==vr::VREvent_MouseButtonDown &&
-                   ev.data.mouse.button==vr::VRMouseButton_Left)open();
+                   ev.data.mouse.button==vr::VRMouseButton_Left)open("start",startX);
             }
-            while(ov->PollNextOverlayEvent(popup.handle,&ev,sizeof(ev))){
-                if(!shown||dashboard||scene) continue;
+            while(ov->PollNextOverlayEvent(display.handle,&ev,sizeof(ev))){
+                if(!visible)continue;
+                if(ev.eventType==vr::VREvent_FocusEnter||ev.eventType==vr::VREvent_MouseMove)
+                    hoverDisplay=true;
+                if(ev.eventType==vr::VREvent_FocusLeave)hoverDisplay=false;
                 if(ev.eventType==vr::VREvent_MouseButtonDown &&
-                   ev.data.mouse.button==vr::VRMouseButton_Left) {
-                    // The legacy OpenVR popup origin is bottom-left.
-                    click(int(ev.data.mouse.x),popupH-int(ev.data.mouse.y));
+                   ev.data.mouse.button==vr::VRMouseButton_Left)open("profiles",buttonX);
+            }
+            for(int i=0;i<activeTasks;++i){
+                auto &task=tasks[size_t(i)];
+                while(ov->PollNextOverlayEvent(task.surface.handle,&ev,sizeof(ev))){
+                    if(!visible)continue;
+                    if(ev.eventType==vr::VREvent_MouseButtonDown &&
+                       ev.data.mouse.button==vr::VRMouseButton_Left){
+                        child_menu(script,dir,"activate",task.id,true,"task");
+                        close();
+                    }
                 }
             }
-            ov->SetOverlayAlpha(display.handle,hover||shown?1.f:.88f);
-            // Reap completed click-action subprocesses without blocking VR input.
+            while(ov->PollNextOverlayEvent(grab.handle,&ev,sizeof(ev))){
+                if(!visible)continue;
+                if(ev.eventType==vr::VREvent_FocusEnter||ev.eventType==vr::VREvent_MouseMove)
+                    hoverGrab=true;
+                if(ev.eventType==vr::VREvent_FocusLeave)hoverGrab=false;
+                if(ev.eventType==vr::VREvent_MouseButtonDown &&
+                   ev.data.mouse.button==vr::VRMouseButton_Left)
+                    drag_start(ev.trackedDeviceIndex);
+                if(ev.eventType==vr::VREvent_MouseButtonUp)
+                    drag_end(ev.trackedDeviceIndex);
+                if(ev.eventType==vr::VREvent_ScrollDiscrete&&dragging){
+                    // Extend or shorten the controller->toolbar offset.
+                    dragRel.m[2][3]-=float(ev.data.scroll.ydelta*.04);
+                }
+            }
+            while(ov->PollNextOverlayEvent(popup.handle,&ev,sizeof(ev))){
+                if(!shown||!visible)continue;
+                if(ev.eventType==vr::VREvent_MouseButtonDown &&
+                   ev.data.mouse.button==vr::VRMouseButton_Left)
+                    click(int(ev.data.mouse.x),popupH-int(ev.data.mouse.y));
+            }
+            ov->SetOverlayAlpha(start.handle,hoverStart||popupKind=="start"?1.f:.88f);
+            ov->SetOverlayAlpha(display.handle,hoverDisplay||popupKind=="profiles"?1.f:.88f);
+            ov->SetOverlayAlpha(grab.handle,hoverGrab||dragging?1.f:.65f);
             while(waitpid(-1,nullptr,WNOHANG)>0){}
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
