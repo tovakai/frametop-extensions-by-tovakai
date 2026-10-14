@@ -11,6 +11,7 @@ import os
 import shutil
 from pathlib import Path
 import sys
+import time
 import tempfile
 import urllib.parse
 
@@ -281,21 +282,37 @@ def draw_item(cr, it, kind):
 
 
 def image_rgba(surface):
-    """Cairo ARGB32 is little-endian BGRA on the Frame; OpenVR wants RGBA."""
+    """Convert little-endian Cairo BGRA into OpenVR RGBA with C-speed slicing.
+
+    Original extraction converted every pixel inside nested Python loops,
+    causing visible multi-second stalls for the Start menu and its categories.
+    Keep Cairo's legacy premultiplied alpha and exact bytes unchanged.
+    """
     surface.flush()
     width = surface.get_width()
     height = surface.get_height()
     stride = surface.get_stride()
     src = bytes(surface.get_data())
-    output = bytearray(width * height * 4)
     if sys.byteorder != "little":
         raise RuntimeError("unsupported Cairo byte order")
-    for y in range(height):
-        for x in range(width):
-            n = y * stride + 4*x
-            o = (y * width + x)*4
-            output[o:o+4] = bytes((src[n+2], src[n+1], src[n], src[n+3]))
-    return output
+    out = bytearray(width * height * 4)
+    if stride == width * 4:
+        # Four native bytearray operations instead of width*height Python loops.
+        out[0::4] = src[2::4]
+        out[1::4] = src[1::4]
+        out[2::4] = src[0::4]
+        out[3::4] = src[3::4]
+    else:
+        # Cairo can use padded strides for other formats; retain an exact row
+        # conversion rather than copying padding into the OpenVR buffer.
+        for y in range(height):
+            row = src[y*stride:y*stride+width*4]
+            base = y*width*4
+            out[base:base+width*4:4] = row[2::4]
+            out[base+1:base+width*4:4] = row[1::4]
+            out[base+2:base+width*4:4] = row[0::4]
+            out[base+3:base+width*4:4] = row[3::4]
+    return out
 
 
 def task_tile(task: dict, dimension: int = 128):
@@ -363,6 +380,7 @@ def main(argv=None):
     if args.kind == "toolbar":
         render_toolbar(directory)
         return 0
+    began = time.perf_counter()
     if args.kind == "start":
         import ui_runtime
         layout = ui_runtime.start_popup(directory)
@@ -372,10 +390,16 @@ def main(argv=None):
         parser.error("no popup renderer for kind: " + args.kind)
     if layout["w"] > 1500 or layout["h"] > 2500:
         raise RuntimeError("popup texture too large")
+    laid_out = time.perf_counter()
     surface = render(layout, args.kind)
+    painted = time.perf_counter()
     write_atomic(directory / "popup.rgba", image_rgba(surface), "wb")
     write_atomic(directory / "popup.txt", model.items_text(
         args.kind, 1, layout, layout["w"] / model.PX_PER_M))
+    if os.getenv("FT_TOOLBAR_TRACE") == "1":
+        log(f"{args.kind} timing: catalog/layout={laid_out-began:.3f}s, "
+            f"Cairo paint={painted-laid_out:.3f}s, "
+            f"RGBA+write={time.perf_counter()-painted:.3f}s")
     return 0
 
 
