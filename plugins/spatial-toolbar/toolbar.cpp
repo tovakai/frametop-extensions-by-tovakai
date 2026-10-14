@@ -863,8 +863,10 @@ public:
                     drag_start(ev.trackedDeviceIndex);
                 if(ev.eventType==vr::VREvent_MouseButtonUp)
                     drag_end(ev.trackedDeviceIndex);
-                if(ev.eventType==vr::VREvent_ScrollDiscrete&&dragging &&
-                   ev.trackedDeviceIndex==dragDevice)
+                // Upstream accepts scroll on the grabbed overlay regardless
+                // of the reported device index (virtual mouse events may use
+                // an invalid index even when a controller owns the drag).
+                if(ev.eventType==vr::VREvent_ScrollDiscrete&&dragging)
                     push_drag(ev.data.scroll.ydelta);
                 light_grab(hoverGrab||dragging);
             }
