@@ -92,14 +92,15 @@ class Backend(QObject):
     def refreshView(self):
         self.reload()
 
-    @Slot(str, result=str)
-    def installPlan(self, identity):
+    @Slot(str, str, result=str)
+    def installPlan(self, identity, source_id):
         try:
-            options = [x for x in self._catalog if x["id"] == identity]
+            options = [x for x in self._catalog if x["id"] == identity and
+                       x["source"] == source_id]
             if len(options) != 1:
-                return "More than one repository provides this ID; select a specific source."
+                return "No unique matching repository/plugin pair."
             target = options[0]
-            chain = self.manager.plan(identity, target["source"])
+            chain = self.manager.plan(identity, source_id)
             return (
                 "Install from " + target["repository"] + ":\n\n" +
                 "\n".join(f"• {x['name']} v{x['version']} ({x['source']})" for x in chain) +
