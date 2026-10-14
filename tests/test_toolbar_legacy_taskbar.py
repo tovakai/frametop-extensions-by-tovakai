@@ -277,7 +277,10 @@ class Guards(unittest.TestCase):
     """Things the spec rules out, checked in the sources."""
 
     def read(self, rel):
-        with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+        # Assert original behavior against preserved legacy source, not core.
+        path = os.path.join(ROOT, "plugins", "spatial-toolbar", "reference",
+                            os.path.basename(rel))
+        with open(path, encoding="utf-8") as f:
             return f.read()
 
     def test_task_menu_wiring(self):
