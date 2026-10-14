@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Read-only legacy spatial-profile inspector. No install, migration or live changes."""
+"""Independent Spatial Profiles: manage live arrangements and inspect legacy metadata.
+
+Legacy inspection (--file + list/show/plan) stays read-only.
+New profiles use an extension-owned store and never mutate upstream layout JSON.
+"""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +14,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "sdk"))
 from frametop_ext import ExtensionError, Frametop  # noqa: E402
+from spatial_runtime import (  # noqa: E402
+    DEFAULT_DURATION, DEFAULT_STORE, ProfileError, bind_slot, delete_profile,
+    read_store as read_extension_store, save_current, switch, use_slot,
+    targets, _read_head, _screen_numbers,
+)
 
 DEFAULT_PROFILES = Path.home() / ".config" / "frametop-layout-profiles.json"
 SLOT_COUNT = 6
@@ -117,15 +126,38 @@ def migration_plan(profile: dict) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", type=Path, default=DEFAULT_PROFILES,
-                        help="read-only path to old frametop-layout-profiles.json")
+                        help="legacy profiles file, for read-only list/show/plan")
+    parser.add_argument("--store", type=Path, default=DEFAULT_STORE,
+                        help="extension-owned profiles file (never the legacy file)")
     sub = parser.add_subparsers(dest="command", required=True)
-    p_list = sub.add_parser("list", help="list stored spatial profiles and six slots")
-    p_list.add_argument("--json", action="store_true")
-    p_show = sub.add_parser("show", help="inspect a profile, without applying it")
-    p_show.add_argument("name")
-    p_plan = sub.add_parser("plan", help="inspect supported fields and migration blockers")
-    p_plan.add_argument("name")
-    sub.add_parser("check-api", help="query the live Frametop extension API (optional)")
+
+    legacy_list = sub.add_parser("list", help="read-only list of legacy spatial profiles")
+    legacy_list.add_argument("--json", action="store_true")
+    legacy_show = sub.add_parser("show", help="read-only legacy profile inspection")
+    legacy_show.add_argument("name")
+    legacy_plan = sub.add_parser("plan", help="inspect missing capabilities for legacy profiles")
+    legacy_plan.add_argument("name")
+    sub.add_parser("check-api", help="probe the live Frametop extension API")
+
+    saved = sub.add_parser("saved", help="list NEW extension-owned profiles and slots")
+    saved.add_argument("--json", action="store_true")
+    save = sub.add_parser("save", help="capture the current WORLD-anchored screen layout")
+    save.add_argument("name")
+    switch_to = sub.add_parser("switch", help="apply an extension-owned spatial profile")
+    switch_to.add_argument("name")
+    switch_to.add_argument("--ms", type=int, default=DEFAULT_DURATION,
+                           help="transition milliseconds, default 450")
+    slot = sub.add_parser("slot", help="assign a saved profile to slot 1..6, or '-' to clear")
+    slot.add_argument("number", type=int)
+    slot.add_argument("name")
+    use = sub.add_parser("use-slot", help="switch to the profile assigned to a slot")
+    use.add_argument("number", type=int)
+    use.add_argument("--ms", type=int, default=DEFAULT_DURATION)
+    delete = sub.add_parser("delete", help="delete extension-owned profile and clear its slots")
+    delete.add_argument("name")
+    preview = sub.add_parser("preview", help="show destination pose WITHOUT moving screens")
+    preview.add_argument("name")
+
     args = parser.parse_args(argv)
     try:
         if args.command == "check-api":
@@ -133,27 +165,84 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"api": client.api_version(),
                               "capabilities": sorted(client.capabilities())}, indent=2))
             return 0
+        # Runtime commands operate exclusively on the extension-owned store.
+        if args.command in {"saved", "save", "switch", "slot", "use-slot", "delete", "preview"}:
+            if args.store.expanduser().resolve() == args.file.expanduser().resolve():
+                raise ProfileError("extension store must not be the legacy profiles file")
+            if args.command == "saved":
+                store = read_extension_store(args.store)
+                if args.json:
+                    print(json.dumps({
+                        "current": store["current"], "profiles": sorted(store["profiles"]),
+                        "slots": store["slots"],
+                    }, indent=2))
+                else:
+                    for name in sorted(store["profiles"]):
+                        print(name + (" *" if name == store["current"] else ""))
+                    print("slots: " + ", ".join(
+                        f"{i}={name or '-'}" for i, name in enumerate(store["slots"], 1)
+                    ))
+                return 0
+            if args.command == "save":
+                store = save_current(args.store, args.name, Frametop())
+                print(f"saved {args.name!r} ({len(store['profiles'][args.name]['screens'])} screens)")
+            elif args.command == "switch":
+                switch(args.store, args.name, Frametop(), args.ms)
+                print(f"switched to {args.name!r} in {args.ms} ms")
+            elif args.command == "slot":
+                bind_slot(args.store, args.number, None if args.name == "-" else args.name)
+                print(f"slot {args.number}: {args.name}")
+            elif args.command == "use-slot":
+                name = use_slot(args.store, args.number, Frametop(), args.ms)
+                print(f"slot {args.number}: switched to {name!r} in {args.ms} ms")
+            elif args.command == "delete":
+                delete_profile(args.store, args.name)
+                print(f"deleted {args.name!r}")
+            else:
+                store = read_extension_store(args.store)
+                if args.name not in store["profiles"]:
+                    raise ProfileError(f"unknown extension profile: {args.name!r}")
+                client = Frametop()
+                if client.api_version() < 1:
+                    raise ProfileError("extension API v1 required")
+                live_screens = _screen_numbers(client)
+                profile = store["profiles"][args.name]
+                if len(profile["screens"]) != len(live_screens):
+                    raise ProfileError("saved screen count differs from active desktop")
+                eye, heading = _read_head(client)
+                result = targets(profile, eye, heading)
+                print(json.dumps({
+                    "name": args.name, "ms_default": DEFAULT_DURATION,
+                    "screens": [
+                        {"screen": i, "world_center": center, "world_face": face,
+                         "roll": screen["roll"], "metres": screen["metres"],
+                         "curve": screen["curve"], "opacity": screen["opacity"],
+                         "hidden": screen["hidden"]}
+                        for i, (center, face, screen) in enumerate(result, 1)
+                    ],
+                }, indent=2))
+            return 0
+        # Legacy file: inspect only, never write to it.
         store = read_store(args.file)
         if args.command == "list":
             if args.json:
-                print(json.dumps({
-                    "current": store["current"],
-                    "profiles": sorted(store["profiles"]),
-                    "slots": store["slots"],
-                }, indent=2))
+                print(json.dumps({"current": store["current"],
+                                  "profiles": sorted(store["profiles"]),
+                                  "slots": store["slots"]}, indent=2))
             else:
                 for name in sorted(store["profiles"]):
                     print(name + (" *" if name == store["current"] else ""))
-                print("slots: " + ", ".join(f"{n+1}={x or '-'}"
-                                          for n, x in enumerate(store["slots"])))
+                print("slots: " + ", ".join(
+                    f"{n+1}={x or '-'}" for n, x in enumerate(store["slots"])
+                ))
             return 0
         if args.name not in store["profiles"]:
-            raise ProfileError(f"no spatial profile named {args.name!r}")
+            raise ProfileError(f"no legacy spatial profile named {args.name!r}")
         profile = store["profiles"][args.name]
         report = profile_summary(profile) if args.command == "show" else migration_plan(profile)
         print(json.dumps({"name": args.name, **report}, indent=2))
         return 0
-    except (ProfileError, ExtensionError) as exc:
+    except (ProfileError, ExtensionError, ValueError) as exc:
         print(f"spatial-profiles: {exc}", file=sys.stderr)
         return 1
 
