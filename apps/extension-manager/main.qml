@@ -57,7 +57,7 @@ Kirigami.ApplicationWindow {
         standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
         contentItem: Controls.Label {
             width: installDialog.width - 60
-            text: backend.installPlan(root.selectedPlugin)
+            text: backend.installPlan(root.selectedPlugin, root.selectedSource)
             wrapMode: Text.Wrap
         }
         onAccepted: backend.install(root.selectedPlugin, root.selectedSource)
