@@ -680,6 +680,7 @@ public:
             vr::VREvent_t ev{};
             while(ov->PollNextOverlayEvent(start.handle,&ev,sizeof(ev))){
                 if(!visible)continue;
+                if(ev.eventType==vr::VREvent_MouseButtonUp)drag_end(ev.trackedDeviceIndex);
                 if(ev.eventType==vr::VREvent_FocusEnter||ev.eventType==vr::VREvent_MouseMove)
                     hoverStart=true;
                 if(ev.eventType==vr::VREvent_FocusLeave)hoverStart=false;
@@ -688,6 +689,7 @@ public:
             }
             while(ov->PollNextOverlayEvent(display.handle,&ev,sizeof(ev))){
                 if(!visible)continue;
+                if(ev.eventType==vr::VREvent_MouseButtonUp)drag_end(ev.trackedDeviceIndex);
                 if(ev.eventType==vr::VREvent_FocusEnter||ev.eventType==vr::VREvent_MouseMove)
                     hoverDisplay=true;
                 if(ev.eventType==vr::VREvent_FocusLeave)hoverDisplay=false;
@@ -698,6 +700,7 @@ public:
                 auto &task=tasks[size_t(i)];
                 while(ov->PollNextOverlayEvent(task.surface.handle,&ev,sizeof(ev))){
                     if(!visible)continue;
+                    if(ev.eventType==vr::VREvent_MouseButtonUp)drag_end(ev.trackedDeviceIndex);
                     if(ev.eventType==vr::VREvent_MouseButtonDown &&
                        ev.data.mouse.button==vr::VRMouseButton_Left){
                         child_menu(script,dir,"activate",task.id,true,"task");
@@ -707,6 +710,7 @@ public:
             }
             while(ov->PollNextOverlayEvent(grab.handle,&ev,sizeof(ev))){
                 if(!visible)continue;
+                if(ev.eventType==vr::VREvent_MouseButtonUp)drag_end(ev.trackedDeviceIndex);
                 if(ev.eventType==vr::VREvent_FocusEnter||ev.eventType==vr::VREvent_MouseMove)
                     hoverGrab=true;
                 if(ev.eventType==vr::VREvent_FocusLeave)hoverGrab=false;
@@ -722,6 +726,7 @@ public:
             }
             while(ov->PollNextOverlayEvent(popup.handle,&ev,sizeof(ev))){
                 if(!shown||!visible)continue;
+                if(ev.eventType==vr::VREvent_MouseButtonUp)drag_end(ev.trackedDeviceIndex);
                 if(ev.eventType==vr::VREvent_MouseButtonDown &&
                    ev.data.mouse.button==vr::VRMouseButton_Left)
                     click(int(ev.data.mouse.x),popupH-int(ev.data.mouse.y));
