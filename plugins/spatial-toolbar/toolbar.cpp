@@ -171,13 +171,35 @@ Mat facing_head(const Mat& at,const Mat& hmd) {
     for(int i=0;i<3;++i)m.m[i][3]=at.m[i][3];
     return m;
 }
-bool hmd_pose(Mat& out) {
+struct HmdDiagnostic {
+    bool connected=false;
+    bool valid=false;
+    vr::ETrackingResult tracking=vr::TrackingResult_Uninitialized;
+};
+bool hmd_pose(Mat& out, HmdDiagnostic* diagnostic=nullptr) {
     vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount]{};
     vr::VRSystem()->GetDeviceToAbsoluteTrackingPose(
         vr::TrackingUniverseStanding,0,poses,vr::k_unMaxTrackedDeviceCount);
-    if(!poses[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid) return false;
-    out=poses[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking;
+    const auto& hmd=poses[vr::k_unTrackedDeviceIndex_Hmd];
+    if(diagnostic) {
+        diagnostic->connected=hmd.bDeviceIsConnected;
+        diagnostic->valid=hmd.bPoseIsValid;
+        diagnostic->tracking=hmd.eTrackingResult;
+    }
+    if(!hmd.bPoseIsValid) return false;
+    out=hmd.mDeviceToAbsoluteTracking;
     return true;
+}
+const char* tracking_name(vr::ETrackingResult result) {
+    switch(result){
+        case vr::TrackingResult_Uninitialized: return "Uninitialized";
+        case vr::TrackingResult_Calibrating_InProgress: return "Calibrating_InProgress";
+        case vr::TrackingResult_Calibrating_OutOfRange: return "Calibrating_OutOfRange";
+        case vr::TrackingResult_Running_OK: return "Running_OK";
+        case vr::TrackingResult_Running_OutOfRange: return "Running_OutOfRange";
+        case vr::TrackingResult_Fallback_RotationOnly: return "Fallback_RotationOnly";
+        default: return "Unknown";
+    }
 }
 void show(Surface& s,bool on) {
     if(s.handle==vr::k_ulOverlayHandleInvalid || s.visible==on)return;
@@ -297,7 +319,43 @@ public:
             std::perror("toolbar: control socket already bound");
             return false;
         }
-        if(!hmd_pose(head)){std::cerr<<"toolbar: HMD pose not available\n";return false;}
+        // Independent OpenVR overlay applications can connect before SteamVR
+        // publishes a valid tracking pose. The compositor polls every tick;
+        // don't make our startup depend on a single instantaneous reading.
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+        auto next_report=std::chrono::steady_clock::now();
+        HmdDiagnostic tracking{};
+        bool ready=false;
+        int samples=0;
+        while(!stop && std::chrono::steady_clock::now()<deadline){
+            if(hmd_pose(head,&tracking)){
+                ready=true;
+                break;
+            }
+            if(std::chrono::steady_clock::now()>=next_report){
+                std::cerr<<"toolbar: waiting for HMD tracking (connected="
+                         <<int(tracking.connected)<<", pose_valid="<<int(tracking.valid)
+                         <<", tracking="<<tracking_name(tracking.tracking)
+                         <<", VRSystem connected="
+                         <<int(vr::VRSystem()->IsTrackedDeviceConnected(vr::k_unTrackedDeviceIndex_Hmd))
+                         <<")\n";
+                next_report=std::chrono::steady_clock::now()+std::chrono::seconds(3);
+            }
+            // Keep the extension's stop command responsive even during startup.
+            char message[24]{};
+            const ssize_t got=recv(control,message,sizeof(message),0);
+            if(got==4 && std::memcmp(message,"stop",4)==0){stop=1;break;}
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            ++samples;
+        }
+        if(!ready){
+            std::cerr<<"toolbar: no valid HMD pose after "<<samples
+                     <<" tracking polls. Put on/wake the headset; verify tracking in SteamVR."
+                     <<" If Frametop screens are tracked normally, report the tracking"
+                     <<" diagnostics above (a separate OpenVR client may be missing poses).\n";
+            return false;
+        }
+        std::cerr<<"toolbar: HMD tracking ready after "<<samples<<" retries\n";
         const double heading=std::atan2(head.m[0][2],head.m[2][2])*180/PI;
         const double dx=-std::sin(heading*PI/180),dz=-std::cos(heading*PI/180);
         base=panel_pose(head.m[0][3]+dx*.75,head.m[1][3]-.40,
