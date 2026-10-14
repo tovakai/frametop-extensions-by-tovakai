@@ -230,6 +230,54 @@ grey when released. If thumbstick scroll never arrives, the next hardware
 diagnostic is to log grab-overlay scroll events rather than guessing at an
 OpenVR action binding.
 
+### Running task icons: recovery beyond Start-menu matching
+
+Some valid applications appear in the taskbar as two-letter placeholders
+(e.g. **IN**). This is the *last-resort* label from the legacy task tile
+painter, not a deliberate icon. The original app matching only looked at
+entries exposed to the Start menu, and the extracted painter could decode
+PNGs but not common SVG/JPEG/XPM icons.
+
+The independent extension now builds an icon candidate list for each
+running application from **KWin's `desktopFileName` and `resourceClass`**
+as well as any matched Start entry. It resolves actual `.desktop`
+metadata even when `OnlyShowIn` excluded that application from the Start
+menu, then tries the real `Icon=` and alternative theme names.
+Flatpak/host absolute paths are translated through the distrobox
+`/run/host` mount when needed. The painter now rasterizes icons through
+GdkPixbuf (or `rsvg-convert` for SVG); task overlays continue using the
+existing pooled handles.
+
+**One-time opt-in container dependency refresh**, to make sure the Fedora
+renderer can decode SVG and XPM as well as PNG:
+
+```sh
+cd ~/frametop-toolbar-test
+git fetch origin feature/toolbar-openvr-host
+git switch --detach origin/feature/toolbar-openvr-host
+bash plugins/spatial-toolbar/install-renderer-deps.sh
+```
+
+The installer modifies only the existing Frametop **Fedora dev container**,
+not SteamOS or the Frametop core. Then **restart the standalone toolbar**
+so its warm renderer reloads GdkPixbuf:
+
+```sh
+bash plugins/spatial-toolbar/run.sh
+```
+
+No C++ rebuild is needed for this icon-only change.
+
+If a task still shows initials, the renderer reports the missing icon identity
+and the names it tried **once per application**:
+
+```sh
+grep 'unresolved task icon' /run/user/$(id -u)/frametop-spatial-toolbar/menu.log
+```
+
+That output identifies cases needing an exact app-specific icon mapping.
+It does not include full window captions or the contents of applications.
+
 ### Original popup renderer dependencies
 
 The legacy toolbar's Pango/Cairo painter originally ran on the **SteamOS
