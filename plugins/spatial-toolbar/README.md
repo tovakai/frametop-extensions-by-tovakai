@@ -1,4 +1,74 @@
-# Spatial Toolbar: salvage the working legacy toolbar
+# Spatial Toolbar v0.1.0: first standalone OpenVR slice
+
+The first **runnable** toolbar prototype is now on branch
+`feature/toolbar-openvr-host`. It is **not yet hardware-verified**.
+It launches as its own OpenVR overlay process, outside Frametop core.
+
+**Implemented:** original arched bar silhouette and spatial placement,
+the original `ft_toolbar` model's Displays-button position, the monitor
+glyph, a clickable Displays button, the original Pango/Cairo popup painter,
+profile names/current highlight/slot badges, and clicking a profile to switch
+via the independent Spatial Profiles runtime. The footer captures a new
+automatically numbered arrangement. The overlay keys are namespaced
+`tovakai.spatial-toolbar.*`.
+
+**Not yet implemented:** the rest of Start/Tasks/Tray, text-entry naming,
+toolbar grab/move/follow, direct screen docking, outside-click handling beyond
+the popup and button, and a managed build/start/stop lifecycle. Do not mistake
+the preserved reference source below for active features.
+
+## First Frame hardware test (without changing your main checkout)
+
+```sh
+cd ~/frametop-extensions
+git fetch origin feature/toolbar-openvr-host
+git worktree add --detach ~/frametop-toolbar-test origin/feature/toolbar-openvr-host
+
+cd ~/frametop-toolbar-test
+bash plugins/spatial-toolbar/build.sh
+bash plugins/spatial-toolbar/run.sh
+```
+
+Requirements: running Frametop API core and SteamVR on the Frame, with
+`~/frametop-api` as the API fork checkout. If it lives elsewhere, set
+`FRAMETOP_CORE_DIR` to that path. The build runs in **Frametop's existing
+distrobox**, compiles only `toolbar.cpp`, and links against SteamVR's
+ARM64 `libopenvr_api` using the same pinned Valve OpenVR header as the
+legacy fork. It never builds/restarts `ft-screens`.
+
+The bar should appear around 75 cm in front of your initial headset pose,
+40 cm below eye level, then remain **world-anchored** for this first test.
+The backdrop does **not** capture controller clicks. Aim at **Displays**
+(the monitor glyph), open the familiar popup, and select a saved profile.
+Press **Ctrl+C** in the launching terminal to stop the independent overlay.
+
+The plugin intentionally hides its overlays while the Steam Dashboard or a
+SteamVR scene application is active to avoid invisible controller hitboxes.
+If you're certain no game is running and the bar is inexplicably hidden,
+temporarily retry with `FT_TOOLBAR_ALLOW_SCENE=1 bash plugins/spatial-toolbar/run.sh`
+as a diagnostic. This disables *only* the scene-app visibility gate; do not
+leave it running over games. Popup click handling uses the original OpenVR
+bottom-left origin conversion. Opening the popup refreshes saved profiles.
+
+The profile store and all your existing Frametop layouts are unchanged
+except when you actually click **Save current arrangement** or select a
+profile. The first command creates no services, desktop launchers or
+system configurations. The compiled executable is written only to
+`plugins/spatial-toolbar/build/`.
+
+### Remove the test checkout afterward
+
+```sh
+# Stop toolbar with Ctrl+C before removing the working tree.
+cd ~/frametop-extensions
+git worktree remove ~/frametop-toolbar-test
+```
+
+No Frametop restart or rollback of core required.
+
+---
+
+# Preserved legacy implementation and extraction notes
 
 **Goal:** independently run the existing Frametop toolbar as a SteamVR OpenVR
 overlay process, without adding feature-specific code to the core fork.
@@ -41,8 +111,9 @@ Activating a profile row calls the existing Spatial Profiles runtime's
 **Save current arrangement**. Until text entry is ported, it saves
 `Arrangement 1`, `Arrangement 2`, etc.
 
-This is a **tested popup model/action adapter, not a working VR GUI yet**.
-No OpenVR click events are connected to it in this branch.
+The original popup adapter is now also used by the opt-in standalone
+OpenVR host described above. Its behavior is unit-tested; the visual
+Steam Frame test is still pending.
 
 Offline tests from the extensions repo root:
 
