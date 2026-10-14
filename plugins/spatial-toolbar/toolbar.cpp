@@ -386,6 +386,8 @@ public:
                 }
             }
             ov->SetOverlayAlpha(display.handle,hover||shown?1.f:.88f);
+            // Reap completed click-action subprocesses without blocking VR input.
+            while(waitpid(-1,nullptr,WNOHANG)>0){}
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
     }
