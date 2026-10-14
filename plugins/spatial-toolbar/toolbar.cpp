@@ -358,7 +358,9 @@ public:
             // Yields to the Steam Dashboard and scene applications: don't leave
             // hitboxes invisibly blocking controllers outside the desktop.
             const bool dashboard=ov->IsDashboardVisible();
-            const bool scene=vr::VRApplications() &&
+            const char* override_scene=std::getenv("FT_TOOLBAR_ALLOW_SCENE");
+            const bool allow_scene=override_scene && override_scene[0]=='1';
+            const bool scene=!allow_scene && vr::VRApplications() &&
                 vr::VRApplications()->GetCurrentSceneProcessId()!=0;
             if(dashboard||scene){
                 if(shown)close();
@@ -403,16 +405,16 @@ int main(int argc,char**argv){
         std::cerr<<"toolbar: OpenVR init failed: "<<vr::VR_GetVRInitErrorAsEnglishDescription(err)<<"\n";
         return 1;
     }
+    int rc=0;
     {
         Toolbar host(argv[1],argv[2]);
         if(host.setup()){
             std::cerr<<"toolbar: independent Displays overlay running (Ctrl+C to stop)\n";
             host.loop();
         }else{
-            vr::VR_Shutdown();
-            return 1;
+            rc=1;
         }
-    }
+    } // Destroy our overlay handles while OpenVR is still initialized.
     vr::VR_Shutdown();
-    return 0;
+    return rc;
 }
