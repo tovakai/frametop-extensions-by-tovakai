@@ -1,21 +1,68 @@
-# Spatial Toolbar v0.1.0: first standalone OpenVR slice
+# Spatial Toolbar v0.1.0: full interactive shell restoration (experimental)
 
-The first **runnable** toolbar prototype is now on branch
-`feature/toolbar-openvr-host`. It is **not yet hardware-verified**.
-It launches as its own OpenVR overlay process, outside Frametop core.
+The independent OpenVR prototype has been extended following the first **actual
+Steam Frame device test**. That test confirmed the old Displays-only prototype
+rendered but was missing Start, running tasks and a drag handle. This revision
+addresses those missing pieces; **the revised build still needs a new hardware
+test**.
 
-**Implemented:** original arched bar silhouette and spatial placement,
-the original `ft_toolbar` model's Displays-button position, the monitor
-glyph, a clickable Displays button, the original Pango/Cairo popup painter,
-profile names/current highlight/slot badges, and clicking a profile to switch
-via the independent Spatial Profiles runtime. The footer captures a new
-automatically numbered arrangement. The overlay keys are namespaced
-`tovakai.spatial-toolbar.*`.
+Implemented in the standalone process:
 
-**Not yet implemented:** the rest of Start/Tasks/Tray, text-entry naming,
-toolbar grab/move/follow, direct screen docking, outside-click handling beyond
-the popup and button, and a managed build/start/stop lifecycle. Do not mistake
-the preserved reference source below for active features.
+- **Start:** the original four-square glyph, its own correctly scaled
+  clickable OpenVR tile, and the salvaged Pango/Cairo application grid,
+  category chips and pages. Activates apps via Frametop's existing
+  `@frametop_launch` nested-desktop service.
+- **Running tasks:** the preserved KWin D-Bus scripting watcher now runs as
+  an independent **SteamOS-host helper**, never edits Frametop's session.
+  `ft_taskbar_model.merge_tasks` maps its windows to app IDs, and the salvaged
+  Cairo renderer paints individual 128x128 RGBA app-icon tiles. The toolbar
+  checks for task-feed changes every two seconds, pools the OpenVR overlay
+  handles, and updates the actual model's packing. Clicking a task focuses or
+  minimizes its window. Multiple windows currently focus the first; the
+  original chooser is a later slice. Default pinned apps are not yet restored.
+- **Displays:** the existing original profile popup and 450 ms switching
+  adapter remain intact.
+- **Grab handle:** a visible pale pill underneath the bar, with its own
+  OpenVR hitbox, grabs a valid controller pose on trigger-down and updates
+  the entire toolbar's spatial transform until release. Scroll adjusts
+  controller-relative depth while dragging.
+- **Input policy:** the arched dark backing stays NON-interactive. Every
+  real control owns a separate OpenVR mouse overlay with texture-accurate
+  mouse scale; blank bar areas **should** be click-through. Never replace
+  this with a giant, invisible blocking surface.
+- **Isolation:** opt-in running process and host task helper; no core
+  modifications, SteamVR dashboard reparenting, Frametop restart or service
+  autostart. Private stop control cleans up our overlays.
+
+Not restored yet: original tray (Wi-Fi / volume), right-click task context
+menu, multi-window chooser, profile rename GUI, pinned apps, per-frame soft
+follow, or screen docking. Those remain separate slices, not dummy controls.
+
+## Next hardware test
+
+From the same test worktree, once the branch is updated:
+
+```sh
+cd ~/frametop-toolbar-test
+git fetch origin feature/toolbar-openvr-host
+git switch --detach origin/feature/toolbar-openvr-host
+bash plugins/spatial-toolbar/build.sh
+bash plugins/spatial-toolbar/run.sh
+```
+
+Verify that **Start**, **running task icons**, **Displays**, and the **grab
+pill** appear as individual interactive controls. Try Start → Applications →
+launch an app; change between saved Displays profiles; drag the pill to move
+the bar. Missing task icons can indicate the standalone KWin watcher couldn't
+connect to the *nested* Plasma session D-Bus. Inspect the independent log:
+
+```sh
+cat /run/user/$(id -u)/frametop-spatial-toolbar/tasks.log
+```
+
+This helper is launched by `run.sh` and stopped automatically on exit. It
+is intentionally never run from the OpenVR Fedora box, since the nested KWin
+session bus belongs to the SteamOS host.
 
 ### Original popup renderer dependencies
 
@@ -61,11 +108,10 @@ distrobox**, compiles only `toolbar.cpp`, and links against SteamVR's
 ARM64 `libopenvr_api` using the same pinned Valve OpenVR header as the
 legacy fork. It never builds/restarts `ft-screens`.
 
-The bar should appear around 75 cm in front of your initial headset pose,
-40 cm below eye level, then remain **world-anchored** for this first test.
-The backdrop does **not** capture controller clicks. Aim at **Displays**
-(the monitor glyph), open the familiar popup, and select a saved profile.
-Press **Ctrl+C** in the launching terminal to stop the independent overlay.
+The bar should initially appear around 75 cm ahead and 40 cm below
+eye level. It stays world-anchored after you release the grab handle. The
+passive backing **does not** capture controller clicks; aim at an actual
+tile. Press **Ctrl+C** in the launching terminal to stop the overlay.
 Because distrobox doesn't always forward signals, the runner also sends an
 extension-owned shutdown message when it exits. If the terminal disconnects
 or the overlays remain visible, use the **safe fallback**:
