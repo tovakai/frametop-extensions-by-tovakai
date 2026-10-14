@@ -51,9 +51,55 @@ if ! "$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
 fi
 echo "Running the independent Spatial Toolbar. Press Ctrl+C to stop."
 echo "Fallback: python3 $here/control.py stop"
-# The old KWin watcher must run on the SteamOS host's NESTED Plasma session
-# bus, not inside the OpenVR build container. It never edits Frametop core.
+# Frametop's distrobox wrapper does NOT forward process signals reliably.
+# Shut down only our own worker, task watcher, and overlays on exit.
 task_pid=""
+menu_pid=""
+cleanup() {
+    python3 "$here/control.py" stop >/dev/null 2>&1 || true
+    python3 "$here/menu_worker.py" stop --dir "$runtime" >/dev/null 2>&1 || true
+    if [[ -n "$task_pid" ]]; then
+        kill "$task_pid" 2>/dev/null || true
+        wait "$task_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$menu_pid" ]]; then
+        # The explicit stop command above closes the owned socket. Killing
+        # the launcher afterward avoids leaving its container wrapper behind.
+        kill "$menu_pid" 2>/dev/null || true
+        wait "$menu_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Keep the original Cairo/Pango painter loaded between menu clicks. Start
+# inside the same Fedora box as the OpenVR host, with the same private runtime.
+"$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
+    "FT_TOOLBAR_TRACE=${FT_TOOLBAR_TRACE:-0}" \
+    python3 "$here/menu_worker.py" serve --dir "$runtime" \
+    > "$runtime/menu.log" 2>&1 &
+menu_pid=$!
+ready=0
+for _ in $(seq 1 100); do
+    if python3 "$here/menu_worker.py" ping --dir "$runtime" >/dev/null 2>&1; then
+        ready=1
+        break
+    fi
+    if ! kill -0 "$menu_pid" 2>/dev/null; then
+        break
+    fi
+    sleep .1
+done
+if [[ "$ready" != 1 ]]; then
+    echo "Spatial Toolbar: warm menu renderer failed to start:" >&2
+    cat "$runtime/menu.log" >&2
+    exit 1
+fi
+echo "Warm Cairo/Pango menu renderer ready."
+
+# The original KWin task watcher runs on the SteamOS HOST but uses the
+# nested Plasma private bus discovered from its live process environment.
 python3 "$here/tasks.py" > "$runtime/tasks.log" 2>&1 &
 task_pid=$!
 sleep .2
@@ -64,18 +110,6 @@ if ! kill -0 "$task_pid" 2>/dev/null; then
 else
     echo "Standalone KWin task provider started (PID $task_pid)."
 fi
-# Frametop's distrobox wrapper does NOT forward process signals reliably.
-# Cleanup both independently owned helpers; do not touch ft-screens/SteamVR.
-cleanup() {
-    python3 "$here/control.py" stop >/dev/null 2>&1 || true
-    if [[ -n "$task_pid" ]]; then
-        kill "$task_pid" 2>/dev/null || true
-        wait "$task_pid" 2>/dev/null || true
-    fi
-}
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 "$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
     "FT_TOOLBAR_TRACE=${FT_TOOLBAR_TRACE:-0}" \
     "$here/build/ft-toolbar" "$here/menu.py" "$runtime"
