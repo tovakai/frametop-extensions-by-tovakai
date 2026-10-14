@@ -643,7 +643,7 @@ public:
                                         uint32_t(w),uint32_t(h),4);
         if(err!=vr::VROverlayError_None){
             std::cerr<<"toolbar: popup texture rejected; current menu stays visible: "
-                     <<ov->GetOverlayErrorNameFromEnum(err)<<"\\n";
+                     <<ov->GetOverlayErrorNameFromEnum(err)<<"\n";
             return;
         }
         const vr::HmdVector2_t mouseScale={{float(w),float(h)}};
@@ -663,7 +663,7 @@ public:
         const auto showErr=ov->ShowOverlay(incoming.handle);
         if(showErr!=vr::VROverlayError_None){
             std::cerr<<"toolbar: popup presentation failed; retaining current menu: "
-                     <<ov->GetOverlayErrorNameFromEnum(showErr)<<"\\n";
+                     <<ov->GetOverlayErrorNameFromEnum(showErr)<<"\n";
             return;
         }
         incoming.visible=true;
