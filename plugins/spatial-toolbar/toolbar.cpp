@@ -305,7 +305,19 @@ struct TaskButton {
     Surface surface;
     std::string id;
     double x=0;
+    std::uint64_t pixelsHash=0;
 };
+std::uint64_t pixel_hash(const std::vector<uint8_t>& bytes){
+    // Update task textures only when content changes (e.g. focus underline).
+    // Legacy bug: re-uploading the same texture on every hover/event could
+    // exhaust OpenVR's raw-texture staging and leave invisible hot buttons.
+    std::uint64_t value=14695981039346656037ULL;
+    for(uint8_t b:bytes){
+        value^=b;
+        value*=1099511628211ULL;
+    }
+    return value;
+}
 std::vector<uint8_t> start_button(){
     // The original GlyphStart: four square cutouts around the centre of the tile.
     std::vector<uint8_t> data(size_t(CW)*CW*4,0);
@@ -459,24 +471,28 @@ public:
                             size_t(128)*128*4,rgba)) {
                 std::cerr<<"toolbar: missing task icon "<<i<<"\n";return false;
             }
+            const auto digest=pixel_hash(rgba);
             if(i>=int(tasks.size())){
                 tasks.emplace_back();
                 auto &t=tasks.back();
                 const std::string key="tovakai.spatial-toolbar.task."+std::to_string(i);
                 if(!create(t.surface,key.c_str(),"Running application",rgba,128,128,
                            .075f,true,3))return false;
+                t.pixelsHash=digest;
             }else{
-                // Stable pooled OpenVR handles. NEVER recreate on task changes.
+                // Preserve handles, but update a changed focused state or icon.
+                // Zero uploads for an identical image and zero overlay recreation.
                 auto &t=tasks[size_t(i)];
-                if(t.id!=wanted[size_t(i)].first) {
+                if(t.pixelsHash!=digest || t.id!=wanted[size_t(i)].first) {
                     const auto err=vr::VROverlay()->SetOverlayRaw(t.surface.handle,
                                                      rgba.data(),128,128,4);
                     if(err!=vr::VROverlayError_None){
                         std::cerr<<"toolbar: task texture upload refused; retaining previous\n";
-                        continue; // don't update ID to mismatch old icon and click target
+                        continue;
                     }
                     const vr::HmdVector2_t ms={{128.f,128.f}};
                     vr::VROverlay()->SetOverlayMouseScale(t.surface.handle,&ms);
+                    t.pixelsHash=digest;
                 }
             }
             tasks[size_t(i)].id=wanted[size_t(i)].first;
