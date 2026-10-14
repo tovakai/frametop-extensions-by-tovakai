@@ -13,6 +13,7 @@ import socket
 import urllib.parse
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import gi
@@ -211,21 +212,24 @@ def main():
         return 1
     # Frametop starts nested KWin under a separate dbus-run-session. Never
     # inherit an SSH or host-terminal bus, even if it happens to be valid.
-    try:
-        nested = discover()
-    except NestedSessionError as exc:
-        log("nested D-Bus unavailable:", exc)
-        return 1
-    os.environ.update(nested)
+    # Allow a short window for KWin to claim its name after Plasma startup.
     DBusGMainLoop(set_as_default=True)
-    try:
-        probe = dbus.SessionBus()
-        if not probe.name_has_owner("org.kde.KWin"):
-            log("nested bus found, but org.kde.KWin has no owner yet")
+    deadline=time.monotonic()+8.0
+    last_error="No running nested KWin process discovered"
+    while True:
+        try:
+            nested=discover()
+            os.environ.update(nested)
+            probe=dbus.SessionBus()
+            if probe.name_has_owner("org.kde.KWin"):
+                break
+            last_error="nested bus exists, but org.kde.KWin has no owner yet"
+        except Exception as exc:
+            last_error=str(exc)
+        if time.monotonic()>deadline:
+            log("nested KWin D-Bus unavailable:",last_error)
             return 1
-    except Exception as exc:
-        log("nested KWin D-Bus check failed:", exc)
-        return 1
+        time.sleep(.5)
     log("using nested Frametop KWin private session bus")
     runtime=Path(RUN)
     runtime.mkdir(parents=True,exist_ok=True,mode=0o700)
