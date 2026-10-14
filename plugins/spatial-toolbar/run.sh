@@ -33,5 +33,11 @@ if ! flock -n 9; then
     exit 1
 fi
 echo "Running the independent Displays toolbar. Press Ctrl+C to stop."
-exec "$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
+echo "Fallback: python3 $here/control.py stop"
+# Frametop's distrobox wrapper does NOT forward process signals reliably.
+# On every launcher exit, ask the plugin process itself to dispose its overlays.
+trap 'python3 "$here/control.py" stop >/dev/null 2>&1 || true' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+"$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
     "$here/build/ft-toolbar" "$here/menu.py" "$runtime"
