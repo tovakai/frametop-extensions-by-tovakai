@@ -43,7 +43,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            python3-gi python3-gi-cairo python3-cairo gir1.2-pango-1.0
+            python3-gi python3-gi-cairo python3-cairo gir1.2-pango-1.0 gir1.2-gdkpixbuf-2.0 librsvg2-common
       - name: Render salvaged Displays popup with system Python
         run: |
           mkdir -p "${RUNNER_TEMP}/toolbar-popup"
@@ -104,6 +104,29 @@ jobs:
           assert converted[-4:]==bytes((255,0,0,255)),converted[-4:]
           print("Cairo 700x900 conversion:",round(elapsed,3),"s")
           '
+      - name: Resolve and paint a non-PNG running-app icon
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import os,sys
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          sys.path.insert(0,"plugins/spatial-toolbar")
+          import menu, cairo
+          assert menu.GdkPixbuf is not None, "missing GdkPixbuf binding"
+          svg=root/"fake-task.svg"
+          svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="red"/></svg>')
+          menu.ICONS=str(root/"icons")
+          (root/"icons").mkdir(exist_ok=True)
+          surface=menu.task_tile({"id":"demo","name":"Inspector",
+                                  "icon_candidates":[str(svg)]})
+          result=root/"test-task.png"
+          surface.write_to_png(str(result))
+          rendered=cairo.ImageSurface.create_from_png(str(result))
+          assert rendered.get_width()==128
+          assert menu._icon_cache[str(svg)].endswith(".png"), menu._icon_cache
+          assert menu._icon_cache[str(svg)]!=""
+          print("Non-PNG SVG task icon decoded successfully")
+          PY
       - name: Render original Start applications grid
         run: |
           /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind start --dir "${RUNNER_TEMP}/toolbar-popup"
