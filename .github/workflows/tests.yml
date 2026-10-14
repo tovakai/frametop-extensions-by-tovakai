@@ -86,6 +86,24 @@ jobs:
           print("Live-task layout and icon tile smoke test OK")
           '
 
+      - name: Verify fast Cairo byte conversion preserves original RGBA
+        run: |
+          /usr/bin/python3 -c '
+          import sys,time
+          sys.path.insert(0,"plugins/spatial-toolbar")
+          import cairo,menu
+          surface=cairo.ImageSurface(cairo.FORMAT_ARGB32,700,900)
+          cr=cairo.Context(surface)
+          cr.set_source_rgba(1.0,0.0,0.0,1.0)
+          cr.paint()
+          start=time.monotonic()
+          converted=menu.image_rgba(surface)
+          elapsed=time.monotonic()-start
+          assert len(converted)==700*900*4
+          assert converted[:4]==bytes((255,0,0,255)),converted[:4]
+          assert converted[-4:]==bytes((255,0,0,255)),converted[-4:]
+          print("Cairo 700x900 conversion:",round(elapsed,3),"s")
+          '
       - name: Render original Start applications grid
         run: |
           /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind start --dir "${RUNNER_TEMP}/toolbar-popup"
