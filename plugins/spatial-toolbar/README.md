@@ -145,6 +145,43 @@ Python rendering from OpenVR texture upload latency.
 
 **This new version changes toolbar.cpp. Rebuild before hardware testing.**
 
+### Seamless Start category switches (fourth device iteration)
+
+The latest device feedback confirmed that Start is responsive, but category
+selection visibly flashed the popup away for a frame. The warm-renderer change
+fixed menu generation latency; the remaining issue was presenting a new raw
+texture directly on the already-visible OpenVR popup overlay.
+
+The toolbar now uses **two pooled OpenVR popup handles**. On a Start
+category/page change, it renders the replacement into the *hidden* overlay,
+updates its exact mouse scale and pose, presents it above the current menu,
+and leaves the old image visible underneath for 55 ms. The old overlay
+becomes **non-interactive immediately**, so it cannot block pointer clicks
+behind the new menu. The background toolbar remains click-through.
+The original overlay is then hidden, not destroyed, and is reused for the
+next page.
+
+If the replacement render, upload or presentation fails, the old popup remains
+visible and usable. Fast repeated selections reclaim the retired overlay
+without ever writing the active overlay's texture. Both handles are hidden
+when the menu closes or SteamVR Dashboard takes over.
+
+**Requires a new C++ build:**
+
+```sh
+cd ~/frametop-toolbar-test
+git fetch origin feature/toolbar-openvr-host
+git switch --detach origin/feature/toolbar-openvr-host
+bash plugins/spatial-toolbar/build.sh
+bash plugins/spatial-toolbar/run.sh
+```
+
+Check that Start stays continuously visible while selecting categories and
+paging, that only the currently displayed page responds to clicks, and that
+opening/closing Start and Displays still works. This behavior is covered by
+offline regression and C++ syntax tests but needs Steam Frame visual
+verification before merging the experimental toolbar branch.
+
 ### Original popup renderer dependencies
 
 The legacy toolbar's Pango/Cairo painter originally ran on the **SteamOS
