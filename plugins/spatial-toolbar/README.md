@@ -17,6 +17,31 @@ toolbar grab/move/follow, direct screen docking, outside-click handling beyond
 the popup and button, and a managed build/start/stop lifecycle. Do not mistake
 the preserved reference source below for active features.
 
+### Original popup renderer dependencies
+
+The legacy toolbar's Pango/Cairo painter originally ran on the **SteamOS
+host**. This independent OpenVR build runs it inside Frametop's existing
+Fedora distrobox, where the original container package list did not include
+the PyGObject/Cairo Python bindings. This can manifest as
+`AttributeError: module 'gi' has no attribute 'require_version'`.
+
+One-time, explicitly install the Fedora packages **inside the distrobox**:
+
+```sh
+cd ~/frametop-toolbar-test
+bash plugins/spatial-toolbar/install-renderer-deps.sh
+```
+
+This is a deliberate, opt-in package change **to the dev container only**,
+not SteamOS and not Frametop core source. The script checks the actual
+`gi.require_version`, Pango/PangoCairo and `cairo` imports afterward.
+The regular `run.sh` performs a popup render preflight before OpenVR startup
+and explains how to install the missing dependencies; it will never run
+`dnf` or `sudo` itself.
+
+No C++ rebuild or SteamVR restart is required when adding these Python
+renderer packages.
+
 ## First Frame hardware test (without changing your main checkout)
 
 ```sh
