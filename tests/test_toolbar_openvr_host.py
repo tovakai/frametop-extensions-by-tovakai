@@ -63,6 +63,20 @@ class HostContracts(unittest.TestCase):
             ft_toolbar.DEFAULT_GROUPS)]
         self.assertIn('popup:profiles',names)
 
+    def test_original_cairo_renderer_has_explicit_container_setup(self):
+        dependencies=(DIR/"install-renderer-deps.sh").read_text()
+        launcher=(DIR/"run.sh").read_text()
+        self.assertIn("python3-gobject python3-cairo pango",dependencies)
+        self.assertIn('"$core/scripts/in-box"',dependencies)
+        self.assertIn("menu.py",launcher)
+        self.assertIn(" render --dir ",launcher)
+        self.assertIn("install-renderer-deps.sh",launcher)
+        # No implicit package installation, root access or compositor restart
+        # is permitted during the normal renderer startup.
+        self.assertNotIn("dnf install",launcher)
+        self.assertNotIn("sudo",launcher)
+        self.assertNotIn("systemctl",launcher)
+
     def test_startup_waits_for_valid_headset_tracking(self):
         code=(DIR/"toolbar.cpp").read_text()
         self.assertIn("std::chrono::seconds(15)",code)
