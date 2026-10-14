@@ -11,6 +11,8 @@ import urllib.parse
 import ft_desktop
 import ft_taskbar_model as model
 import ft_toolbar
+import task_icons
+
 
 
 def _write_json_atomic(path: Path, value) -> None:
@@ -61,7 +63,11 @@ def tasks(runtime: Path) -> list[dict]:
         windows, active = data["windows"], data.get("active", "")
         if not isinstance(windows, list) or not isinstance(active, str):
             return []
-        return model.merge_tasks([], windows, cached_apps(runtime), active)[:12]
+        merged = model.merge_tasks([], windows, cached_apps(runtime), active)[:12]
+        def find_icon_desktop(desktop_id):
+            path = ft_desktop.find_desktop_by_id(desktop_id)
+            return ft_desktop.read_desktop_entry(path) if path else None
+        return task_icons.task_sources(merged, windows, find_icon_desktop)
     except (OSError, KeyError, TypeError, ValueError):
         # KWin feed isn't running yet, so show Start/Displays without false task tiles.
         return []
