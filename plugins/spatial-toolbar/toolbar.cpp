@@ -13,6 +13,10 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <cstddef>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -265,6 +269,7 @@ bool load_popup(const std::string& directory,std::vector<uint8_t>& bytes,
 class Toolbar {
     std::string script,dir;
     Surface backdrop,display,popup;
+    int control=-1;
     std::vector<Item> items;
     Mat base=identity(),head=identity();
     Arch a;
@@ -274,9 +279,24 @@ class Toolbar {
     std::chrono::steady_clock::time_point nextTime{};
 public:
     Toolbar(std::string p,std::string d):script(std::move(p)),dir(std::move(d)){}
-    ~Toolbar(){close();destroy(popup);destroy(display);destroy(backdrop);}
+    ~Toolbar(){
+        close();
+        destroy(popup);destroy(display);destroy(backdrop);
+        if(control>=0) ::close(control);
+    }
     void close() {shown=false;show(popup,false);}
     bool setup(){
+        control=socket(AF_UNIX,SOCK_DGRAM|SOCK_NONBLOCK,0);
+        if(control<0){std::perror("toolbar: control socket");return false;}
+        sockaddr_un addr{};
+        addr.sun_family=AF_UNIX;
+        const char name[]="tovakai_toolbar_control";
+        std::memcpy(addr.sun_path+1,name,sizeof(name)-1);
+        const auto length=socklen_t(offsetof(sockaddr_un,sun_path)+sizeof(name));
+        if(bind(control,reinterpret_cast<sockaddr*>(&addr),length)!=0){
+            std::perror("toolbar: control socket already bound");
+            return false;
+        }
         if(!hmd_pose(head)){std::cerr<<"toolbar: HMD pose not available\n";return false;}
         const double heading=std::atan2(head.m[0][2],head.m[2][2])*180/PI;
         const double dx=-std::sin(heading*PI/180),dz=-std::cos(heading*PI/180);
@@ -355,6 +375,12 @@ public:
     void loop(){
         auto *ov=vr::VROverlay();
         while(!stop){
+            char command[24]{};
+            const ssize_t n=recv(control,command,sizeof(command),0);
+            if(n==4 && std::memcmp(command,"stop",4)==0){
+                stop=1;
+                break;
+            }
             // Yields to the Steam Dashboard and scene applications: don't leave
             // hitboxes invisibly blocking controllers outside the desktop.
             const bool dashboard=ov->IsDashboardVisible();
