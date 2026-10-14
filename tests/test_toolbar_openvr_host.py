@@ -40,7 +40,7 @@ class HostContracts(unittest.TestCase):
         code=(DIR/"toolbar.cpp").read_text()
         self.assertIn('VROverlayInputMethod_None',code)
         self.assertIn('SetOverlayMouseScale(s.handle,&scale)',code)
-        self.assertIn('SetOverlayMouseScale(popup.handle,&ms)',code)
+        self.assertIn('SetOverlayMouseScale(popup.handle,&mouseScale)',code)
         self.assertIn('SetOverlayAlpha(display.handle',code)
         # Hover is an alpha-only change, never a texture re-upload.
         loop=code.split('void loop(){')[1].split('};\n} // namespace')[0]
@@ -51,10 +51,13 @@ class HostContracts(unittest.TestCase):
     def test_orig_models_and_painter_are_used(self):
         provider=(DIR/"menu.py").read_text()
         self.assertIn('import ft_toolbar',provider)
-        self.assertIn('ft_toolbar.button_local_x(',provider)
+        runtime=(DIR/"ui_runtime.py").read_text()
+        self.assertIn('ft_toolbar.button_local_x(',runtime)
         self.assertIn('model.items_text(',provider)
         self.assertIn('toolbar_profiles.displays_popup()',provider)
-        self.assertIn('toolbar_profiles.activate(item)',provider)
+        self.assertIn('toolbar_profiles.activate(item)',runtime)
+        self.assertIn('model.start_layout(',runtime)
+        self.assertIn('model.merge_tasks(',runtime)
         self.assertIn('PangoCairo.show_layout(',provider)
         self.assertIn('surf = cairo.ImageSurface(cairo.FORMAT_ARGB32',provider)
         self.assertIn('os.replace(',provider)
@@ -62,6 +65,27 @@ class HostContracts(unittest.TestCase):
         names=[name for _,name,_ in ft_toolbar.button_local_x(
             ft_toolbar.DEFAULT_GROUPS)]
         self.assertIn('popup:profiles',names)
+
+    def test_start_task_and_drag_are_real_overlay_controls(self):
+        code=(DIR/"toolbar.cpp").read_text()
+        for key in ("tovakai.spatial-toolbar.start",
+                    "tovakai.spatial-toolbar.task.",
+                    "tovakai.spatial-toolbar.grab"):
+            self.assertIn(key,code)
+        self.assertIn('open("start",startX)',code)
+        self.assertIn('open("profiles",buttonX)',code)
+        self.assertIn('drag_start(ev.trackedDeviceIndex)',code)
+        self.assertIn('drag_end(ev.trackedDeviceIndex)',code)
+        self.assertIn('drag_tick();',code)
+        self.assertIn('std::filesystem::last_write_time(dir+"/tasks.json"',code)
+        self.assertIn('SetOverlayInputMethod(s.handle,',code)
+        self.assertIn('mouse?vr::VROverlayInputMethod_Mouse:vr::VROverlayInputMethod_None',code)
+        self.assertIn("show(backdrop,visible);",code)
+        self.assertIn('show(start,visible);show(display,visible);show(grab,visible);',code)
+        provider=(DIR/"tasks.py").read_text()
+        self.assertIn("workspace.windowList()",provider)
+        self.assertIn("org.tovakai.SpatialToolbar",provider)
+        self.assertIn('sock.bind(b"\\0tovakai_toolbar_tasks")',provider)
 
     def test_original_cairo_renderer_has_explicit_container_setup(self):
         dependencies=(DIR/"install-renderer-deps.sh").read_text()
