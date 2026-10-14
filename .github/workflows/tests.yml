@@ -33,3 +33,30 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Plugin discovery
         run: python tools/list_extensions.py
+
+  popup-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install original Pango/Cairo rendering dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-gi-cairo python3-cairo gir1.2-pango-1.0
+      - name: Render salvaged Displays popup with system Python
+        run: |
+          mkdir -p "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 -c '
+          from pathlib import Path
+          import os
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          fields=(p/"popup.txt").read_text().splitlines()[0].split()
+          assert fields[:2]==["popup","profiles"], fields
+          width,height=int(fields[3]),int(fields[4])
+          assert len((p/"popup.rgba").read_bytes())==width*height*4
+          assert "popup:profiles" not in (p/"popup.txt").read_text()
+          assert (p/"layout.txt").exists()
+          print("Legacy Displays popup rendered OK:",width,"x",height)
+          '
