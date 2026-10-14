@@ -5,11 +5,28 @@ import os
 from pathlib import Path
 import socket
 import time
+import tempfile
 import urllib.parse
 
 import ft_desktop
 import ft_taskbar_model as model
 import ft_toolbar
+
+
+def _write_json_atomic(path: Path, value) -> None:
+    """Owner-only metadata, no dependency on Cairo/Pango or the menu process."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temp = tempfile.mkstemp(prefix=".toolbar-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            os.fchmod(out.fileno(), 0o600)
+            json.dump(value, out, ensure_ascii=False)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temp, path)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
 
 
 def cached_apps(runtime: Path, ttl: float = 60.) -> list[dict]:
@@ -34,9 +51,7 @@ def cached_apps(runtime: Path, ttl: float = 60.) -> list[dict]:
         pass
     apps = ft_desktop.list_applications()
     if not path.is_symlink():
-        # Use same atomic per-user write helper as the original popup service.
-        from menu import write_atomic
-        write_atomic(path, json.dumps(apps, ensure_ascii=False))
+        _write_json_atomic(path, apps)
     return apps
 
 
@@ -80,10 +95,9 @@ def get_start_state(runtime: Path) -> tuple[str, int]:
 
 def set_start_state(runtime: Path, category: str, page: int):
     # The runtime directory is private and never accepts arbitrary paths.
-    from menu import write_atomic
-    write_atomic(runtime / "start-state.json", json.dumps({
+    _write_json_atomic(runtime / "start-state.json", {
         "category": category, "page": page,
-    }))
+    })
 
 
 def start_popup(runtime: Path):
