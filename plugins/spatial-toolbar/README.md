@@ -64,6 +64,48 @@ This helper is launched by `run.sh` and stopped automatically on exit. It
 is intentionally never run from the OpenVR Fedora box, since the nested KWin
 session bus belongs to the SteamOS host.
 
+### Startup speed and nested KWin D-Bus (second device iteration)
+
+The first hardware test with Start restored found two independent problems:
+
+1. **Slow Start/category switches.** The original extracted `menu.py` used
+   two nested Python loops over each rendered Cairo image to swap BGRA to RGBA.
+   Now it uses memoryview/bytearray extended channel slices implemented in
+   native code, preserving the exact colors and alpha. Its smoke test converts
+   a 700×900 surface in milliseconds. The Python menu adapter also keeps an
+   atomic 60-second on-disk catalog of FreeDesktop applications so every
+   category click doesn't rescan the entire installed application tree.
+   Icons are still rendered through the original Cairo/Pango painter.
+
+2. **No running apps from KWin** with
+   `org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable`.
+   The core's nested Plasma runs in a separate `dbus-run-session`, not the
+   host D-Bus inherited by SSH or the outer terminal. The standalone watcher
+   now reads the **existing nested KWin process's** limited environment
+   (only bus address, Wayland display and nested runtime) and connects
+   explicitly to that bus after checking `org.kde.KWin` owns its name.
+   It does not launch/modify KWin, create a new bus, or change Frametop core.
+   It retries briefly if Plasma is still starting.
+
+To check the task watcher after this update:
+
+```sh
+cat /run/user/$(id -u)/frametop-spatial-toolbar/tasks.log
+```
+
+Expected: `using nested Frametop KWin private session bus`, then
+`KWin task script loaded`. If those appear but task icons do not,
+check whether `tasks.json` is receiving the actual window list.
+
+For opt-in **timings** of subsequent Start/category renders:
+
+```sh
+FT_TOOLBAR_TRACE=1 bash plugins/spatial-toolbar/run.sh
+```
+
+The terminal prints time spent in app discovery/layout, Cairo painting,
+and RGBA conversion/file writes separately; this doesn't change core state.
+
 ### Original popup renderer dependencies
 
 The legacy toolbar's Pango/Cairo painter originally ran on the **SteamOS
