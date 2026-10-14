@@ -15,9 +15,10 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(len(manifests), 1)
         item = manifests[0]
         self.assertEqual(item.id, "tovakai.spatial-profiles")
-        self.assertEqual(item.status, "prototype")
+        self.assertEqual(item.status, "experimental")
+        self.assertEqual(item.version, "0.1.0")
         self.assertEqual(item.min_extension_api, 1)
-        self.assertIn("screen.move", item.optional_capabilities)
+        self.assertIn("screen.move", item.required_capabilities)
 
     def test_reject_traversal_and_invalid_capabilities(self):
         with tempfile.TemporaryDirectory() as directory:
