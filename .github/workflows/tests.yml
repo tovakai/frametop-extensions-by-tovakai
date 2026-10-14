@@ -48,6 +48,7 @@ jobs:
         run: |
           mkdir -p "${RUNNER_TEMP}/toolbar-popup"
           /usr/bin/python3 plugins/spatial-toolbar/menu.py render --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind toolbar --dir "${RUNNER_TEMP}/toolbar-popup"
           /usr/bin/python3 -c '
           from pathlib import Path
           import os
