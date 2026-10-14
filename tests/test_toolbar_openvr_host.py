@@ -63,6 +63,15 @@ class HostContracts(unittest.TestCase):
             ft_toolbar.DEFAULT_GROUPS)]
         self.assertIn('popup:profiles',names)
 
+    def test_startup_waits_for_valid_headset_tracking(self):
+        code=(DIR/"toolbar.cpp").read_text()
+        self.assertIn("std::chrono::seconds(15)",code)
+        self.assertIn("hmd_pose(head,&tracking)",code)
+        self.assertIn("IsTrackedDeviceConnected(vr::k_unTrackedDeviceIndex_Hmd)",code)
+        self.assertIn("tracking_name(tracking.tracking)",code)
+        self.assertIn("std::chrono::milliseconds(50)",code)
+        self.assertIn('std::memcmp(message,"stop",4)==0',code)
+
     def test_cli_and_build_do_not_modify_core(self):
         build=(DIR/"build.sh").read_text()
         runner=(DIR/"run.sh").read_text()
