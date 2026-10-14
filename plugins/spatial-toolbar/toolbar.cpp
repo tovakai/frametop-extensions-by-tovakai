@@ -19,6 +19,7 @@
 #include <sys/un.h>
 #include <cstdlib>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -238,16 +239,18 @@ void destroy(Surface& s) {
     s.handle=vr::k_ulOverlayHandleInvalid;
 }
 int child_menu(const std::string& script,const std::string& directory,
-               const char* action,const std::string& item="",bool detach=false) {
+               const char* action,const std::string& item="",bool detach=false,
+               const char* kind="profiles") {
     const pid_t pid=fork();
     if(pid<0) return -1;
     if(pid==0) {
         if(detach) setsid();
         if(item.empty())
-            execlp("python3","python3",script.c_str(),action,"--dir",directory.c_str(),(char*)nullptr);
+            execlp("python3","python3",script.c_str(),action,"--dir",directory.c_str(),
+                   "--kind",kind,(char*)nullptr);
         else
             execlp("python3","python3",script.c_str(),action,"--dir",directory.c_str(),
-                   "--item",item.c_str(),(char*)nullptr);
+                   "--kind",kind,"--item",item.c_str(),(char*)nullptr);
         _exit(127);
     }
     if(detach) return 0;
@@ -255,17 +258,21 @@ int child_menu(const std::string& script,const std::string& directory,
     if(waitpid(pid,&status,0)<0) return -1;
     return WIFEXITED(status)?WEXITSTATUS(status):-1;
 }
-bool load_layout(const std::string& directory,double& width,double& x) {
+bool load_layout(const std::string& directory,double& width,double& displayX,
+                 double& startX,int& count) {
     std::ifstream in(directory+"/layout.txt");
-    return bool(in>>width>>x) && width>=.90 && width<4. && std::abs(x)<width/2;
+    return bool(in>>width>>displayX>>startX>>count) &&
+           width>=.90 && width<4. && std::abs(displayX)<width/2 &&
+           std::abs(startX)<width/2 && count>=0 && count<=12;
 }
-bool load_popup(const std::string& directory,std::vector<uint8_t>& bytes,
-                int& width,int& height,double& metres,std::vector<Item>& items){
+bool load_popup(const std::string& directory,const std::string& expected,
+                std::vector<uint8_t>& bytes,int& width,int& height,
+                double& metres,std::vector<Item>& items){
     std::ifstream f(directory+"/popup.txt");
     std::string tag,kind;
     int serial=0;
     if(!(f>>tag>>kind>>serial>>width>>height>>metres) ||
-       tag!="popup" || kind!="profiles" || width<1 || width>1500 ||
+       tag!="popup" || kind!=expected || width<1 || width>1500 ||
        height<1 || height>2500 || metres<=0 || metres>1.5) return false;
     items.clear();
     std::string line;
@@ -275,19 +282,75 @@ bool load_popup(const std::string& directory,std::vector<uint8_t>& bytes,
         Item it;
         if(!(row>>tag>>it.id>>it.x>>it.y>>it.w>>it.h) || tag!="item")return false;
         if(it.x<0||it.y<0||it.w<1||it.h<1 ||
-           it.x+it.w>width || it.y+it.h>height) return false;
+           it.x+it.w>width || it.y+it.h>height || items.size()>256)return false;
         items.push_back(it);
     }
     std::ifstream raw(directory+"/popup.rgba",std::ios::binary|std::ios::ate);
     if(!raw) return false;
     const auto size=raw.tellg();
-    const size_t expected=size_t(width)*height*4;
-    if(size!=std::streamoff(expected)) return false;
-    bytes.resize(expected);
+    const size_t expected_bytes=size_t(width)*height*4;
+    if(size!=std::streamoff(expected_bytes)) return false;
+    bytes.resize(expected_bytes);
     raw.seekg(0);
-    return bool(raw.read((char*)bytes.data(),std::streamsize(expected)));
+    return bool(raw.read((char*)bytes.data(),std::streamsize(expected_bytes)));
 }
-
+bool load_pixels(const std::string& path,size_t expected,std::vector<uint8_t>& px){
+    std::ifstream file(path,std::ios::binary|std::ios::ate);
+    if(!file||file.tellg()!=std::streamoff(expected))return false;
+    px.resize(expected);
+    file.seekg(0);
+    return bool(file.read((char*)px.data(),std::streamsize(expected)));
+}
+struct TaskButton {
+    Surface surface;
+    std::string id;
+    double x=0;
+};
+std::vector<uint8_t> start_button(){
+    // The original GlyphStart: four square cutouts around the centre of the tile.
+    std::vector<uint8_t> data(size_t(CW)*CW*4,0);
+    for(int y=0;y<CW;++y)for(int x=0;x<CW;++x){
+        uint8_t* p=&data[(size_t(y)*CW+x)*4];
+        const double u=(x+.5-CW/2.)/(CW/2.),v=(CW/2.-y-.5)/(CW/2.);
+        if(std::abs(u)>=.94||std::abs(v)>=.94)continue;
+        p[0]=0x0e;p[1]=0x14;p[2]=0x1b;p[3]=255;
+        const double au=std::fabs(u),av=std::fabs(v);
+        if(au>.06&&au<.38&&av>.06&&av<.38){
+            p[0]=225;p[1]=231;p[2]=235;
+        }
+    }
+    return data;
+}
+std::vector<uint8_t> grab_texture(){
+    // Salvaged ChromeStyle pill proportions: 0.24m wide, ~0.038m tall.
+    constexpr int w=256,h=40;
+    std::vector<uint8_t> px(size_t(w)*h*4,0);
+    const double r=8;
+    for(int y=0;y<h;++y)for(int x=0;x<w;++x){
+        const double dx=x+.5-std::clamp(x+.5,r,double(w)-r);
+        const double dy=y+.5-std::clamp(y+.5,r,double(h)-r);
+        const double a=std::clamp(r-std::hypot(dx,dy)+.5,0.,1.);
+        if(a<=0)continue;
+        uint8_t*p=&px[(size_t(y)*w+x)*4];
+        p[0]=0x88;p[1]=0xcc;p[2]=0xf1;p[3]=uint8_t(a*145);
+    }
+    return px;
+}
+Mat inverse(const Mat& a) {
+    Mat m{};
+    for(int i=0;i<3;++i)for(int j=0;j<3;++j)m.m[i][j]=a.m[j][i];
+    for(int i=0;i<3;++i)for(int j=0;j<3;++j)m.m[i][3]-=m.m[i][j]*a.m[j][3];
+    return m;
+}
+bool tracked_pose(vr::TrackedDeviceIndex_t index,Mat& out) {
+    if(index>=vr::k_unMaxTrackedDeviceCount)return false;
+    vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount]{};
+    vr::VRSystem()->GetDeviceToAbsoluteTrackingPose(
+        vr::TrackingUniverseStanding,0,poses,vr::k_unMaxTrackedDeviceCount);
+    if(!poses[index].bPoseIsValid)return false;
+    out=poses[index].mDeviceToAbsoluteTracking;
+    return true;
+}
 class Toolbar {
     std::string script,dir;
     Surface backdrop,display,popup;
