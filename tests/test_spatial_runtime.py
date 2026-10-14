@@ -44,10 +44,13 @@ class FakeClient:
         self.hidden = set()
         self.calls = []
         self.error_on = None
-        self.capabilities = {"screen.move", "screen.opacity", "screen.status"}
+        self.supported = {"screen.move", "screen.opacity", "screen.status"}
 
     def api_version(self):
         return 1
+
+    def capabilities(self):
+        return set(self.supported)
 
     def screen_status(self, number):
         return {"opacity": str(self.alpha[number-1]), "moving": "0",
