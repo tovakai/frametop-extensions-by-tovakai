@@ -7,6 +7,7 @@
 // Never include legacy *.inc in Frametop core or this host.
 #include <openvr.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -382,7 +383,12 @@ bool tracked_pose(vr::TrackedDeviceIndex_t index,Mat& out) {
 }
 class Toolbar {
     std::string script,dir,popupKind;
-    Surface backdrop,start,display,grab,popup;
+    Surface backdrop,start,display,grab;
+    // Two persistent popup overlays: the old texture stays visible behind the
+    // freshly uploaded one until SteamVR has had time to present it.
+    std::array<Surface,2> popups{};
+    int activePopup=-1,retiringPopup=-1;
+    std::chrono::steady_clock::time_point retirePopupAfter{};
     std::vector<TaskButton> tasks;
     int activeTasks=0,control=-1,popupW=0,popupH=0;
     std::vector<Item> items;
@@ -400,14 +406,25 @@ public:
     ~Toolbar(){
         close();
         for(auto &t:tasks)destroy(t.surface);
-        destroy(popup);destroy(grab);destroy(start);destroy(display);destroy(backdrop);
+        for(auto &p:popups)destroy(p);
+        destroy(grab);destroy(start);destroy(display);destroy(backdrop);
         if(control>=0)::close(control);
     }
     void close() {
         shown=false;
         popupKind.clear();
         items.clear();
-        show(popup,false);
+        for(auto &p:popups)show(p,false);
+        activePopup=-1;
+        retiringPopup=-1;
+    }
+    void retire_popup_if_ready(){
+        if(retiringPopup<0)return;
+        if(std::chrono::steady_clock::now()<retirePopupAfter)return;
+        // The previous image gave SteamVR three ~16 ms frames to present the
+        // newly uploaded one. It is already non-interactive while retiring.
+        show(popups[size_t(retiringPopup)],false);
+        retiringPopup=-1;
     }
     Mat visual_pose()const{
         const double pitch=std::clamp(-std::atan2(.40,.75)*180/PI-TILT_BACK,-70.,45.);
@@ -447,8 +464,18 @@ public:
         const Mat pose=mul(facing_head(at,head),
                             translation(0,BAR_H/2+.018+popupHeight/2,0));
         auto *ov=vr::VROverlay();
-        ov->SetOverlayWidthInMeters(popup.handle,float(popupMetres));
-        ov->SetOverlayTransformAbsolute(popup.handle,vr::TrackingUniverseStanding,&pose);
+        if(activePopup>=0){
+            auto &p=popups[size_t(activePopup)];
+            ov->SetOverlayWidthInMeters(p.handle,float(popupMetres));
+            ov->SetOverlayTransformAbsolute(p.handle,vr::TrackingUniverseStanding,&pose);
+        }
+        if(retiringPopup>=0){
+            // Keep the outgoing image at the same pose while it covers the
+            // replacement overlay's upload/presentation latency.
+            auto &p=popups[size_t(retiringPopup)];
+            ov->SetOverlayWidthInMeters(p.handle,float(popupMetres));
+            ov->SetOverlayTransformAbsolute(p.handle,vr::TrackingUniverseStanding,&pose);
+        }
     }
     bool update_bar(bool first=false) {
         if(child_menu(script,dir,"render","",false,"toolbar")!=0){
@@ -575,8 +602,10 @@ public:
         if(!create(grab,"tovakai.spatial-toolbar.grab","Toolbar move handle",
                    grab_texture(),256,40,.24f,true,3))return false;
         const std::vector<uint8_t> blank(4*4*4,0);
-        if(!create(popup,"tovakai.spatial-toolbar.popup","Frametop Toolbar Menu",
+        if(!create(popups[0],"tovakai.spatial-toolbar.popup","Frametop Toolbar Menu A",
                    blank,4,4,.49f,true,4))return false;
+        if(!create(popups[1],"tovakai.spatial-toolbar.popup.swap",
+                   "Frametop Toolbar Menu B",blank,4,4,.49f,true,4))return false;
         // The old task renderer may have written icons before overlay startup.
         // Request one refresh now that the backing/controls exist.
         if(!update_bar(false))return false;
@@ -599,15 +628,57 @@ public:
             std::cerr<<"toolbar: invalid "<<kind<<" popup buffer\n";return;
         }
         auto *ov=vr::VROverlay();
-        const auto err=ov->SetOverlayRaw(popup.handle,pixels.data(),uint32_t(w),uint32_t(h),4);
+        // Upload to the HIDDEN, inactive overlay. Updating the currently
+        // visible OpenVR raw texture caused a black frame on category changes.
+        // Keep both handles pooled; never destroy/recreate on navigation.
+        const int stage=(activePopup<0)?0:1-activePopup;
+        auto &incoming=popups[size_t(stage)];
+        if(retiringPopup==stage){
+            // Rapid consecutive category clicks: reclaim the previous page
+            // only after making it non-interactive. The current page remains.
+            show(incoming,false);
+            retiringPopup=-1;
+        }
+        const auto err=ov->SetOverlayRaw(incoming.handle,pixels.data(),
+                                        uint32_t(w),uint32_t(h),4);
         if(err!=vr::VROverlayError_None){
-            std::cerr<<"toolbar: popup texture rejected; old texture retained\n";return;
+            std::cerr<<"toolbar: popup texture rejected; current menu stays visible: "
+                     <<ov->GetOverlayErrorNameFromEnum(err)<<"\\n";
+            return;
         }
         const vr::HmdVector2_t mouseScale={{float(w),float(h)}};
-        ov->SetOverlayMouseScale(popup.handle,&mouseScale);
+        ov->SetOverlayMouseScale(incoming.handle,&mouseScale);
+        const double popupHeight=metres*h/double(w);
+        const Mat at=mul(visual_pose(),on_arch(a,x,.030,false,curve));
+        Mat eye{};
+        if(hmd_pose(eye))head=eye;
+        const Mat pose=mul(facing_head(at,head),
+                           translation(0,BAR_H/2+.018+popupHeight/2,0));
+        ov->SetOverlayWidthInMeters(incoming.handle,float(metres));
+        ov->SetOverlayTransformAbsolute(incoming.handle,vr::TrackingUniverseStanding,&pose);
+        ov->SetOverlaySortOrder(incoming.handle,5);
+        ov->SetOverlayInputMethod(incoming.handle,vr::VROverlayInputMethod_Mouse);
+        // New overlay is presented in front, old one remains behind as a
+        // temporary fallback. Only one overlay may receive pointer input.
+        const auto showErr=ov->ShowOverlay(incoming.handle);
+        if(showErr!=vr::VROverlayError_None){
+            std::cerr<<"toolbar: popup presentation failed; retaining current menu: "
+                     <<ov->GetOverlayErrorNameFromEnum(showErr)<<"\\n";
+            return;
+        }
+        incoming.visible=true;
+        const int previous=activePopup;
+        if(previous>=0){
+            auto &outgoing=popups[size_t(previous)];
+            ov->SetOverlaySortOrder(outgoing.handle,4);
+            ov->SetOverlayInputMethod(outgoing.handle,vr::VROverlayInputMethod_None);
+            retiringPopup=previous;
+            retirePopupAfter=std::chrono::steady_clock::now()+
+                             std::chrono::milliseconds(55);
+        }
+        activePopup=stage;
         popupW=w;popupH=h;popupMetres=metres;items=std::move(boxes);
         anchorX=x;popupKind=kind;shown=true;
-        place_popup();show(popup,true);
     }
     void click(int x,int y){
         for(auto it=items.rbegin();it!=items.rend();++it){
@@ -741,13 +812,18 @@ public:
                     dragRel.m[2][3]-=float(ev.data.scroll.ydelta*.04);
                 }
             }
-            while(ov->PollNextOverlayEvent(popup.handle,&ev,sizeof(ev))){
-                if(!shown||!visible)continue;
-                if(ev.eventType==vr::VREvent_MouseButtonUp)drag_end(ev.trackedDeviceIndex);
-                if(ev.eventType==vr::VREvent_MouseButtonDown &&
-                   ev.data.mouse.button==vr::VRMouseButton_Left)
-                    click(int(ev.data.mouse.x),popupH-int(ev.data.mouse.y));
+            // Poll both handles so stale events cannot accumulate when a
+            // formerly interactive page retires. Only the active menu clicks.
+            for(int index=0;index<2;++index){
+                while(ov->PollNextOverlayEvent(popups[size_t(index)].handle,&ev,sizeof(ev))){
+                    if(!visible||!shown||index!=activePopup)continue;
+                    if(ev.eventType==vr::VREvent_MouseButtonUp)drag_end(ev.trackedDeviceIndex);
+                    if(ev.eventType==vr::VREvent_MouseButtonDown &&
+                       ev.data.mouse.button==vr::VRMouseButton_Left)
+                        click(int(ev.data.mouse.x),popupH-int(ev.data.mouse.y));
+                }
             }
+            retire_popup_if_ready();
             ov->SetOverlayAlpha(start.handle,hoverStart||popupKind=="start"?1.f:.88f);
             ov->SetOverlayAlpha(display.handle,hoverDisplay||popupKind=="profiles"?1.f:.88f);
             ov->SetOverlayAlpha(grab.handle,hoverGrab||dragging?1.f:.65f);
