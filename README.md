@@ -4,12 +4,12 @@ Optional extensions for [Frametop](https://github.com/Frametop/frametop), develo
 
 This repository will house **Spatial Profiles**, **Spatial Follow**, **Gaze Attention**, **Spatial Toolbar**, and **Spatial Instruments**. It is separate from [the minimal Frametop extension API fork](https://github.com/tovakai/frametop/tree/rebuild/extension-api) and the [legacy implementation](https://github.com/tovakai/frametop/tree/legacy).
 
-> **Early development.** The Frametop extension API is currently an unmerged, device-untested draft. Nothing here is an installable end-user plugin or a replacement for the working legacy fork yet.
+> **Early development.** Frametop extension API v1 discovery and opacity control have been verified on a Steam Frame. Spatial Profiles v0.1.0 now supports CLI capture and switching of **world-anchored** layouts, with device validation of those operations still pending. There is no plugin installer/manager or full legacy feature parity yet.
 
 ## Layout
 
 - `sdk/frametop_ext/`: standard-library Python client for Frametop's versioned extension commands.
-- `plugins/spatial-profiles/`: first extension, beginning with read-only compatibility inspection of the original spatial profiles.
+- `plugins/spatial-profiles/`: **v0.1.0 experimental**: independent world-anchored spatial profiles with native 450 ms transitions, six slots and read-only inspection of legacy profiles.
 - `plugins/spatial-follow/`, `plugins/gaze-attention/`, `plugins/spatial-toolbar/`, `plugins/spatial-instruments/`: future extension specifications.
 - `docs/`: boundaries, manifest conventions and compatibility policy.
 - `tests/`: offline tests without SteamVR or a headset.
@@ -23,6 +23,22 @@ This repository will house **Spatial Profiles**, **Spatial Follow**, **Gaze Atte
 5. **Honest capabilities.** An extension must check the compositor's reported API version and capabilities rather than guessing.
 
 See [architecture](docs/architecture.md) and [manifest draft](docs/extension-manifest-v1.md).
+
+## First extension: Spatial Profiles
+
+On an API-enabled Frame with the Frametop desktop running:
+
+```sh
+python3 plugins/spatial-profiles/profiles.py check-api
+python3 plugins/spatial-profiles/profiles.py save "Desk"
+# Reposition your screens in VR, then:
+python3 plugins/spatial-profiles/profiles.py save "Reading"
+python3 plugins/spatial-profiles/profiles.py switch "Desk"
+python3 plugins/spatial-profiles/profiles.py slot 1 "Desk"
+python3 plugins/spatial-profiles/profiles.py use-slot 1
+```
+
+New profiles are stored in `~/.config/frametop-extensions/spatial-profiles.json` and **do not overwrite** upstream or legacy Frametop layouts. See [Spatial Profiles usage and limitations](plugins/spatial-profiles/README.md) before testing.
 
 ## Developer check
 
