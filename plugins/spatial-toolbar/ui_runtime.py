@@ -4,11 +4,40 @@ import json
 import os
 from pathlib import Path
 import socket
+import time
 import urllib.parse
 
 import ft_desktop
 import ft_taskbar_model as model
 import ft_toolbar
+
+
+def cached_apps(runtime: Path, ttl: float = 60.) -> list[dict]:
+    """Share the legacy FreeDesktop app scan across short-lived popup processes.
+
+    Popup category clicks used to repeat the full icon/desktop-file discovery
+    scan. The user-owned cache is time-bounded and only stores catalog metadata.
+    Cache files cannot select executable paths or alter app launch validation:
+    launching still goes through the existing Frametop launch service.
+    """
+    path = runtime / "app-catalog.json"
+    try:
+        if not path.is_symlink():
+            stat = path.stat()
+            if stat.st_size <= 4 * 1024 * 1024 and time.time() - stat.st_mtime < ttl:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, list) and all(
+                        isinstance(a, dict) and isinstance(a.get("id"), str)
+                        for a in data):
+                    return data
+    except (OSError, ValueError, TypeError):
+        pass
+    apps = ft_desktop.list_applications()
+    if not path.is_symlink():
+        # Use same atomic per-user write helper as the original popup service.
+        from menu import write_atomic
+        write_atomic(path, json.dumps(apps, ensure_ascii=False))
+    return apps
 
 
 def tasks(runtime: Path) -> list[dict]:
@@ -17,7 +46,7 @@ def tasks(runtime: Path) -> list[dict]:
         windows, active = data["windows"], data.get("active", "")
         if not isinstance(windows, list) or not isinstance(active, str):
             return []
-        return model.merge_tasks([], windows, ft_desktop.list_applications(), active)[:12]
+        return model.merge_tasks([], windows, cached_apps(runtime), active)[:12]
     except (OSError, KeyError, TypeError, ValueError):
         # KWin feed isn't running yet, so show Start/Displays without false task tiles.
         return []
@@ -58,7 +87,7 @@ def set_start_state(runtime: Path, category: str, page: int):
 
 
 def start_popup(runtime: Path):
-    apps = ft_desktop.list_applications()
+    apps = cached_apps(runtime)
     category, page_number = get_start_state(runtime)
     page_apps, page, pages = model.start_page(apps, category, page_number)
     return model.start_layout(
@@ -84,7 +113,7 @@ def activate(runtime: Path, kind: str, item: str) -> str:
     if kind == "start":
         if item.startswith("cat:"):
             cat = "" if item == "cat:all" else item[4:]
-            valid = {c for _, c in model.start_categories(ft_desktop.list_applications())}
+            valid = {c for _, c in model.start_categories(cached_apps(runtime))}
             if cat not in valid:
                 raise ValueError("unknown Start category")
             set_start_state(runtime, cat, 0)
@@ -96,7 +125,7 @@ def activate(runtime: Path, kind: str, item: str) -> str:
         if item.startswith("app:"):
             desktop_id = item[4:]
             # Confirm this ID is from the discovered desktop catalog.
-            valid = {a["id"] for a in ft_desktop.list_applications()}
+            valid = {a["id"] for a in cached_apps(runtime)}
             if desktop_id not in valid:
                 raise ValueError("unknown application")
             _launch_desktop(desktop_id)
