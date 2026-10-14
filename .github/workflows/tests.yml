@@ -121,6 +121,7 @@ jobs:
       - name: Exercise persistent renderer with real Cairo/Pango
         run: |
           export FT_TOOLBAR_TEST_DIR="${RUNNER_TEMP}/toolbar-popup"
+          chmod 700 "$FT_TOOLBAR_TEST_DIR"
           FT_TOOLBAR_TRACE=1 /usr/bin/python3 plugins/spatial-toolbar/menu_worker.py serve \
             --dir "$FT_TOOLBAR_TEST_DIR" > "$FT_TOOLBAR_TEST_DIR/menu-worker.log" 2>&1 &
           worker=$!
