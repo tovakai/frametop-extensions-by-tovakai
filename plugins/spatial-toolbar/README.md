@@ -106,6 +106,45 @@ FT_TOOLBAR_TRACE=1 bash plugins/spatial-toolbar/run.sh
 The terminal prints time spent in app discovery/layout, Cairo painting,
 and RGBA conversion/file writes separately; this doesn't change core state.
 
+### Warm menu rendering: third device iteration
+
+The first optimization (Cairo BGRA→RGBA slicing + disk app catalog) removed
+expensive image conversion, but Start/category switching still launched
+`python3 menu.py` separately for each controller click. Worse, changing a
+category waited synchronously for one Python activation and then another cold
+renderer launch. The OpenVR thread was blocked throughout.
+
+The independent toolbar now starts **one persistent Cairo/Pango renderer** in
+its existing Fedora container (`menu_worker.py`), reusing the original popup
+painter, loaded typelibs, icon caches and catalog across requests. The host
+talks to the renderer over `menu.sock` in the toolbar's private 0700 runtime
+directory. A request has a strict whitelist (render / activate / ping / stop),
+is bounded and has a 3-second timeout, never shells out to the user input, and
+never alters Frametop's core. Start/profile content and the original visual
+design remain unchanged.
+
+- **Opening a menu** waits for the warm renderer instead of forking Python.
+- **Changing Start category/page** uses two short socket requests to the same
+  warm process. The original model handles category selection and pagination.
+- **Launching an app/profile selection** queues an activation without blocking
+  the OpenVR loop for the launch itself.
+- **Running-task refresh** uses the same worker and keeps the pooled overlay
+  handles, rather than repeatedly starting Python.
+- **Closing the launcher** sends a private worker stop command, so no always-on
+  orphan service or compositor restart is required.
+
+For performance diagnostics run with `FT_TOOLBAR_TRACE=1`, then view:
+
+```sh
+cat /run/user/$(id -u)/frametop-spatial-toolbar/menu.log
+```
+
+This now includes warm worker request times and the original breakdown of
+catalog/layout, Cairo painting and RGBA/file writes. The log helps distinguish
+Python rendering from OpenVR texture upload latency.
+
+**This new version changes toolbar.cpp. Rebuild before hardware testing.**
+
 ### Original popup renderer dependencies
 
 The legacy toolbar's Pango/Cairo painter originally ran on the **SteamOS
