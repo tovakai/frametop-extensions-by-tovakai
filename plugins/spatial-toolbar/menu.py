@@ -298,10 +298,53 @@ def image_rgba(surface):
     return output
 
 
+def task_tile(task: dict, dimension: int = 128):
+    """Reuse legacy task icon painter on a toolbar-coloured app tile."""
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, dimension, dimension)
+    cr = cairo.Context(surface)
+    rounded(cr, 0, 0, dimension, dimension, dimension * 0.17)
+    cr.set_source_rgb(*C_BG)
+    cr.fill()
+    icon = icon_png(task.get("icon") or "")
+    if icon and draw_icon(cr, icon, 24, 22, 80):
+        pass
+    else:
+        # Fallback for windows without a FreeDesktop icon, not a blank tile.
+        label = (task.get("name") or "?").strip()
+        text(cr, label[:2].upper(), 26, 30, 76, 34, bold=True, align="center", h=70)
+    if task.get("focused"):
+        rounded(cr, 20, dimension - 9, dimension - 40, 4, 2)
+        cr.set_source_rgb(*C_ACCENT)
+        cr.fill()
+    return surface
+
+
+def render_toolbar(directory: Path):
+    """Generate dynamic toolbar packing + task icon textures without OpenVR calls."""
+    import ui_runtime
+    running = ui_runtime.tasks(directory)
+    width, positions = ui_runtime.button_positions(len(running))
+    by_name = {name: x for _, name, x in positions}
+    start_x = by_name["popup:start"]
+    profile_x = by_name["popup:profiles"]
+    tasks_text = []
+    for i, task in enumerate(running):
+        # IDs are only trusted from KWin's live task feed; no user-supplied path.
+        tasks_text.append(f"task {model.wire_id(task['id'])} {by_name['task'+str(i+1)]:.8f}")
+        write_atomic(directory / f"task-{i}.rgba", image_rgba(task_tile(task)), "wb")
+    # Write task list last, so every referenced icon buffer already exists.
+    write_atomic(directory / "tasks.txt", "\n".join(tasks_text) + "\n")
+    write_atomic(directory / "layout.txt", (
+        f"{width:.8f} {profile_x:.8f} {start_x:.8f} {len(running)}\n"
+    ))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("render", "activate"))
     parser.add_argument("--dir", required=True, type=Path)
+    parser.add_argument("--kind", choices=("profiles", "start", "toolbar", "task"),
+                        default="profiles")
     parser.add_argument("--item", default="")
     args = parser.parse_args(argv)
     directory = args.dir
@@ -310,28 +353,29 @@ def main(argv=None):
         if not args.item or len(args.item) > 400:
             parser.error("missing/oversized item ID")
         item = urllib.parse.unquote(args.item)
-        print(toolbar_profiles.activate(item))
+        import ui_runtime
+        print(ui_runtime.activate(directory, args.kind, item))
         return 0
     global RUN, ICONS
     RUN = str(directory)
     ICONS = str(directory / "icons")
     (directory / "icons").mkdir(exist_ok=True, mode=0o700)
-    layout = toolbar_profiles.displays_popup()
+    if args.kind == "toolbar":
+        render_toolbar(directory)
+        return 0
+    if args.kind == "start":
+        import ui_runtime
+        layout = ui_runtime.start_popup(directory)
+    elif args.kind == "profiles":
+        layout = toolbar_profiles.displays_popup()
+    else:
+        parser.error("no popup renderer for kind: " + args.kind)
     if layout["w"] > 1500 or layout["h"] > 2500:
-        raise RuntimeError("too many profile rows for popup texture")
-    surface = render(layout, "profiles")
-    # Publish pixel buffer BEFORE metadata: on reading the header, the host
-    # can already load a complete RGBA payload. Both files are isolated to this
-    # opt-in tool's user-owned runtime directory.
+        raise RuntimeError("popup texture too large")
+    surface = render(layout, args.kind)
     write_atomic(directory / "popup.rgba", image_rgba(surface), "wb")
     write_atomic(directory / "popup.txt", model.items_text(
-        "profiles", 1, layout, 0.49))
-    # Use the ORIGINAL toolbar packing, not guessed C++ button coordinates.
-    positions = dict((name, pos) for _, name, pos in ft_toolbar.button_local_x(
-        ft_toolbar.DEFAULT_GROUPS))
-    write_atomic(directory / "layout.txt", "%0.6f %0.6f\n" % (
-        ft_toolbar.toolbar_total_width(ft_toolbar.DEFAULT_GROUPS),
-        positions["popup:profiles"]))
+        args.kind, 1, layout, layout["w"] / model.PX_PER_M))
     return 0
 
 
