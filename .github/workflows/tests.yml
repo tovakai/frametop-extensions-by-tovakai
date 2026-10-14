@@ -85,3 +85,18 @@ jobs:
           assert len(tasks)==1 and tasks[0].startswith("task "),tasks
           print("Live-task layout and icon tile smoke test OK")
           '
+
+      - name: Render original Start applications grid
+        run: |
+          /usr/bin/python3 plugins/spatial-toolbar/menu.py render --kind start --dir "${RUNNER_TEMP}/toolbar-popup"
+          /usr/bin/python3 -c '
+          import os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"toolbar-popup"
+          head=(p/"popup.txt").read_text().splitlines()[0].split()
+          assert head[0:2]==["popup","start"],head
+          w,h=int(head[3]),int(head[4])
+          assert w>0 and h>0
+          assert len((p/"popup.rgba").read_bytes())==w*h*4
+          print("Legacy Start menu Pango/Cairo smoke test OK:",w,h)
+          '
