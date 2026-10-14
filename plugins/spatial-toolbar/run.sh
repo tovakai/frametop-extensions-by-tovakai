@@ -32,6 +32,18 @@ if ! flock -n 9; then
     echo "Spatial Toolbar already running; refusing duplicate overlay keys." >&2
     exit 1
 fi
+# Catch missing PyGObject/Pango/Cairo and popup layout errors BEFORE attaching
+# our OpenVR overlays. Render once with the exact Python binary/environment that
+# the C++ process will later use. Do not install system/container packages here.
+echo "Checking legacy Pango/Cairo popup renderer in Frametop's container..."
+if ! "$core/scripts/in-box" env "XDG_RUNTIME_DIR=/run/user/$(id -u)" \
+    python3 "$here/menu.py" render --dir "$runtime"; then
+    echo "Spatial Toolbar: the original popup renderer failed its preflight." >&2
+    echo "If Python 'gi' lacks require_version or Cairo is missing, run:" >&2
+    echo "  bash '$here/install-renderer-deps.sh'" >&2
+    echo "Then re-run this toolbar; no rebuild or SteamVR restart is needed." >&2
+    exit 1
+fi
 echo "Running the independent Displays toolbar. Press Ctrl+C to stop."
 echo "Fallback: python3 $here/control.py stop"
 # Frametop's distrobox wrapper does NOT forward process signals reliably.
