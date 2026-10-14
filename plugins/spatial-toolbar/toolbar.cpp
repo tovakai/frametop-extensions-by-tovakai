@@ -351,20 +351,28 @@ std::vector<uint8_t> start_button(){
     }
     return data;
 }
-std::vector<uint8_t> grab_texture(){
-    // Salvaged ChromeStyle pill proportions: 0.24m wide, ~0.038m tall.
-    constexpr int w=256,h=40;
+// Exact Frametop upstream screens/vr.cpp: PillTexture / BarTexture.
+// Light translucent grey idle; blue only when hovered or actively grabbed.
+// Preserve 256x24 texture and its scaled hitbox to avoid "ghost" input.
+// Source: https://github.com/Frametop/frametop/blob/main/screens/vr.cpp
+std::vector<uint8_t> pill_texture(int w,int h,uint8_t red,uint8_t green,
+                                  uint8_t blue,uint8_t alpha){
     std::vector<uint8_t> px(size_t(w)*h*4,0);
-    const double r=8;
+    const double r=h/2.0-1;
     for(int y=0;y<h;++y)for(int x=0;x<w;++x){
-        const double dx=x+.5-std::clamp(x+.5,r,double(w)-r);
-        const double dy=y+.5-std::clamp(y+.5,r,double(h)-r);
-        const double a=std::clamp(r-std::hypot(dx,dy)+.5,0.,1.);
-        if(a<=0)continue;
-        uint8_t*p=&px[(size_t(y)*w+x)*4];
-        p[0]=0x88;p[1]=0xcc;p[2]=0xf1;p[3]=uint8_t(a*145);
+        const double cx=std::clamp(double(x),r+1,w-r-1);
+        const double cy=h/2.0;
+        const double distance=std::hypot(x+.5-cx,y+.5-cy);
+        uint8_t *p=&px[(size_t(y)*w+x)*4];
+        p[0]=red;p[1]=green;p[2]=blue;
+        p[3]=uint8_t(std::clamp(r-distance+.5,0.,1.)*alpha);
     }
     return px;
+}
+const std::vector<uint8_t>& grab_texture(bool lit){
+    static const auto normal=pill_texture(256,24,235,235,235,210);
+    static const auto active=pill_texture(256,24,90,170,255,240);
+    return lit?active:normal;
 }
 Mat inverse(const Mat& a) {
     Mat m{};
@@ -398,6 +406,7 @@ class Toolbar {
     double anchorX=0;
     int backingTextureH=0;
     bool shown=false,hoverStart=false,hoverDisplay=false,hoverGrab=false,dragging=false;
+    bool grabLit=false;
     vr::TrackedDeviceIndex_t dragDevice=vr::k_unTrackedDeviceIndexInvalid;
     std::filesystem::file_time_type lastTasksTime{};
     std::chrono::steady_clock::time_point nextTaskPoll{};
@@ -448,8 +457,8 @@ public:
         cell(display,buttonX,BUTTON_WIDTH);
         for(int i=0;i<activeTasks;++i)cell(tasks[size_t(i)].surface,tasks[size_t(i)].x,
                                                BAR_H*(150.0/180.0)*.9);
-        const double gripWidth=.24;
-        const double gripHeight=gripWidth*(40.0/256.0);
+        const double gripWidth=.30;  // upstream default screen chrome width
+        const double gripHeight=gripWidth*(24.0/256.0);
         const double gripY=-(BAR_H/2+.012+gripHeight/2);
         const Mat gp=mul(visual,translation(0,gripY,BTN_DZ));
         ov->SetOverlayWidthInMeters(grab.handle,float(gripWidth));
@@ -600,7 +609,15 @@ public:
         if(!create(display,"tovakai.spatial-toolbar.displays","Frametop Displays",
                    monitor_button(),CW,CW,float(BUTTON_WIDTH),true,3))return false;
         if(!create(grab,"tovakai.spatial-toolbar.grab","Toolbar move handle",
-                   grab_texture(),256,40,.24f,true,3))return false;
+                   grab_texture(false),256,24,.30f,true,3))return false;
+        // Upstream allows continuous thumbstick up/down while holding the grab
+        // trigger by asking OpenVR for repeated discrete scroll events.
+        if(vr::VROverlay()->SetOverlayFlag(
+               grab.handle,vr::VROverlayFlags_SendVRDiscreteScrollEvents,true)
+           !=vr::VROverlayError_None){
+            std::cerr<<"toolbar: failed to enable thumbstick scroll on grab bar\n";
+            return false;
+        }
         const std::vector<uint8_t> blank(4*4*4,0);
         if(!create(popups[0],"tovakai.spatial-toolbar.popup","Frametop Toolbar Menu A",
                    blank,4,4,.49f,true,4))return false;
@@ -699,6 +716,37 @@ public:
         }
         close();
     }
+    void light_grab(bool lit){
+        if(grabLit==lit)return;
+        const auto &px=grab_texture(lit);
+        const auto err=vr::VROverlay()->SetOverlayRaw(
+            grab.handle,const_cast<uint8_t*>(px.data()),256,24,4);
+        if(err!=vr::VROverlayError_None){
+            std::cerr<<"toolbar: grab highlight upload refused; retaining previous\n";
+            return;
+        }
+        grabLit=lit;
+    }
+    void push_drag(double notches){
+        // Frametop upstream screens/vr.cpp Push(): change the distance from
+        // HEAD to held panel, NOT the controller's local Z. Recompute the
+        // controller-relative grab offset so subsequent arm motion is seamless.
+        if(!dragging||!std::isfinite(notches)||notches==0)return;
+        Mat controller{},eye{};
+        if(!tracked_pose(dragDevice,controller)||!hmd_pose(eye))return;
+        Mat pose=mul(controller,dragRel);
+        const double dx=double(pose.m[0][3])-eye.m[0][3];
+        const double dy=double(pose.m[1][3])-eye.m[1][3];
+        const double dz=double(pose.m[2][3])-eye.m[2][3];
+        const double length=std::sqrt(dx*dx+dy*dy+dz*dz);
+        if(!(length>1e-6))return;
+        const double target=std::clamp(length*(1.+.08*notches),.3,10.);
+        pose.m[0][3]=float(eye.m[0][3]+dx/length*target);
+        pose.m[1][3]=float(eye.m[1][3]+dy/length*target);
+        pose.m[2][3]=float(eye.m[2][3]+dz/length*target);
+        dragRel=mul(inverse(controller),pose);
+        drag_tick(); // immediately move the entire toolbar as one unit
+    }
     void drag_start(vr::TrackedDeviceIndex_t index){
         Mat controller{};
         if(dragging||!tracked_pose(index,controller)){
@@ -706,12 +754,14 @@ public:
         }
         dragRel=mul(inverse(controller),base);
         dragDevice=index;dragging=true;
+        light_grab(true);
         close();std::cerr<<"toolbar: drag started on controller "<<index<<"\n";
     }
     void drag_end(vr::TrackedDeviceIndex_t index){
         if(!dragging||dragDevice!=index)return;
         dragging=false;
         dragDevice=vr::k_unTrackedDeviceIndexInvalid;
+        light_grab(hoverGrab);
         Mat h{};
         if(hmd_pose(h))curve=std::clamp(std::hypot(
             double(h.m[0][3]-base.m[0][3]),
@@ -729,7 +779,13 @@ public:
         place();
     }
     void set_visible(bool visible){
-        if(!visible){close();dragging=false;}
+        if(!visible){
+            close();
+            dragging=false;
+            dragDevice=vr::k_unTrackedDeviceIndexInvalid;
+            hoverGrab=false;
+            light_grab(false);
+        }
         show(backdrop,visible);
         show(start,visible);show(display,visible);show(grab,visible);
         for(int i=0;i<activeTasks;++i)show(tasks[size_t(i)].surface,visible);
@@ -807,10 +863,10 @@ public:
                     drag_start(ev.trackedDeviceIndex);
                 if(ev.eventType==vr::VREvent_MouseButtonUp)
                     drag_end(ev.trackedDeviceIndex);
-                if(ev.eventType==vr::VREvent_ScrollDiscrete&&dragging){
-                    // Extend or shorten the controller->toolbar offset.
-                    dragRel.m[2][3]-=float(ev.data.scroll.ydelta*.04);
-                }
+                if(ev.eventType==vr::VREvent_ScrollDiscrete&&dragging &&
+                   ev.trackedDeviceIndex==dragDevice)
+                    push_drag(ev.data.scroll.ydelta);
+                light_grab(hoverGrab||dragging);
             }
             // Poll both handles so stale events cannot accumulate when a
             // formerly interactive page retires. Only the active menu clicks.
@@ -826,7 +882,8 @@ public:
             retire_popup_if_ready();
             ov->SetOverlayAlpha(start.handle,hoverStart||popupKind=="start"?1.f:.88f);
             ov->SetOverlayAlpha(display.handle,hoverDisplay||popupKind=="profiles"?1.f:.88f);
-            ov->SetOverlayAlpha(grab.handle,hoverGrab||dragging?1.f:.65f);
+            // Match upstream's idle opacity; active highlight uses blue RGBA.
+            ov->SetOverlayAlpha(grab.handle,hoverGrab||dragging?1.f:.55f);
             while(waitpid(-1,nullptr,WNOHANG)>0){}
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
