@@ -1,30 +1,91 @@
-# Spatial Profiles (first extension)
+# Spatial Profiles v0.1.0 (experimental)
 
-This is the **first migration target** from [legacy Frametop](https://github.com/tovakai/frametop/tree/legacy). We will preserve the spatial-only behavior, six profile slots, fixed screen count, follow/attention/instrument/toolbar metadata and **450 ms** profile transitions.
+**First independent Frametop extension.** Saves and switches **world-anchored** spatial screen arrangements through [Frametop extension API v1](https://github.com/tovakai/frametop/blob/rebuild/extension-api/docs/extensions.md).
 
-The original profiles live at `~/.config/frametop-layout-profiles.json`. This prototype **only reads** that file. It does not edit Frametop's active layout, spawn applications, install services or move screens.
+The extension lives here, not in the Frametop core fork. Core stays upstream + general-purpose APIs.
+
+## Run it on Steam Frame
+
+You need the API-enabled Frametop fork installed and its desktop running (ft-screens). Clone this repo independently:
 
 ```sh
+git clone https://github.com/tovakai/frametop-extensions-by-tovakai.git ~/frametop-extensions
+cd ~/frametop-extensions
 python3 tools/list_extensions.py
-
-python3 plugins/spatial-profiles/profiles.py list
-python3 plugins/spatial-profiles/profiles.py show "Desk"
-python3 plugins/spatial-profiles/profiles.py plan "Desk"
 python3 plugins/spatial-profiles/profiles.py check-api
-
-# Inspect an exported copy without using your live config:
-python3 plugins/spatial-profiles/profiles.py --file /path/to/frametop-layout-profiles.json list --json
 ```
 
-`plan` reports the fields we'd need for eventual full application and explicitly identifies missing compositor API capabilities. It doesn't silently downgrade follow modes or convert head-relative screen poses into wrong world coordinates.
+New profiles use **their own** store at `~/.config/frametop-extensions/spatial-profiles.json`. The original `~/.config/frametop-layout-profiles.json` is **never modified**. Frametop's upstream layout and application profiles are also left alone.
 
-The extension API v1 can animate world-space screen positions and opacity, but still cannot reproduce the full original profile behavior. **Do not call this plugin a replacement until the gaps are closed and verified on Steam Frame.**
+```sh
+p="python3 plugins/spatial-profiles/profiles.py"
 
-## Next implementation milestones
+# Arrange your screens in VR using their normal controls, then capture:
+$p save "Work"
 
-1. Read-only inspector, metadata validation, SDK capability negotiation, offline tests.
-2. Snapshot/capture and preview, including HMD-relative pose transforms.
-3. Apply spatial position, curve, scale-independent width, hidden state, and opacity with rollback on partial errors.
-4. Introduce generic follow and gaze-attention APIs, then restore anchors/attention semantics.
-5. Restore profile slots, toolbar/instrument state, atomic save and migration with explicit opt-in.
-6. Run live tests with SteamVR, controller clicks, gaze, performance and app persistence.
+# Move/resize the screens in VR to create another layout:
+$p save "Reading"
+
+# Review what you've saved:
+$p saved
+$p saved --json
+
+# Preview world-space targets using the *current* HMD pose, no changes:
+$p preview "Work"
+
+# Switch (450ms default; --ms 0 for instant):
+$p switch "Work"
+$p switch "Reading" --ms 450
+
+# Map six numbered slots:
+$p slot 1 "Work"
+$p slot 2 "Reading"
+$p use-slot 1
+$p use-slot 2 --ms 600
+$p slot 2 -                # clear slot
+$p delete "Reading"        # also clears matching slots
+```
+
+For a one-off test of a different store:
+
+```sh
+$p --store /tmp/spatial-test.json save "Temporary"
+$p --store /tmp/spatial-test.json saved
+```
+
+## What v0.1.0 actually captures
+
+- Same number of screens in each profile (1..9), with independent position, facing, roll, physical width, curvature, visible/hidden state and opacity.
+- **Head-relative positions and facing**, like legacy Frametop. Switching uses the headset's current world position and yaw, so your workspaces appear in front of you wherever you're sitting.
+- Smooth compositor-native **450 ms** screen movement and opacity transitions; width/curve/hidden flags are applied immediately through Frametop's existing generic commands.
+- Six assignable slots, explicit CLI activation, atomic writes, owner-only saved profile file, and best-effort rollback if a command fails during application.
+- No background daemon or hotkey integration yet. These are CLI profiles, not startup/app-session profiles. The upstream layout applies normally on desktop restart. Switching may need to be re-run after restart.
+
+## Deliberate limits
+
+**v0.1.0 refuses pinned/head-locked screens** during saving or switching. The legacy soft-follow, yaw-follow, position-follow and wrist modes require a separate generic motion/anchoring API. Gaze attention, idle opacity, instruments and toolbar are not silently dropped from legacy profiles: they are simply not accepted for application yet.
+
+Screen count must match exactly. Width refers to physical screen size in metres, **not** a KWin resolution change. SteamVR must have a valid HMD pose to capture/switch.
+
+For read-only inspection of existing legacy profile data:
+
+```sh
+$p list
+$p show "Desk"
+$p plan "Desk"
+
+# Optional exported copy
+$p --file /path/to/frametop-layout-profiles.json list --json
+```
+
+There is **no import/migration of legacy profiles yet**, and the new store uses a strict versioned format. Old profiles are safe in their original path.
+
+Before switching in VR, manually position the displays in a recoverable arrangement. Do not assume this is production-stable before the first on-device save/switch validation. If a command fails halfway, the client attempts to restore the snapshot from before the switch, but a compositor failure can make rollback impossible. You can always reset the core layout with Frametop's normal reset command.
+
+## Test locally (no headset needed)
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+All current tests use a fake compositor, not SteamVR. The API discovery and opacity commands have already been exercised on the actual Steam Frame; this **profile-switching implementation still needs hardware verification**.
