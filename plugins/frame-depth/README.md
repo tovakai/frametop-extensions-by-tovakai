@@ -11,14 +11,41 @@ The renderer uses image **brightness as fake depth**. This can make flat UI look
 strange and is **not** Depth Anything, actual 3D reconstruction or a usable
 monocular depth estimation system yet. The core branch is NOT device-tested.
 
-## How to try it (only after safely building the matching core branch)
+## First, test the GPU without changing the desktop
+
+On 2026-10-19, the experimental `ft-screens` compiled on Steam Frame ARM64
+and the isolated headless compositor advertised `screen.stereo.preview`.
+However, starting that checkout as an **entire desktop** caused a black
+display; restarting SteamVR recovered it. Its root cause is **unknown**.
+
+**Do not replace your installed compositor just to test the preview.** The
+matching core branch now provides an independent timed stereo smoke overlay,
+based on its existing `ft-handtest` tool. It needs no hand tracking, no
+extension repo installed and makes no changes to the launcher.
 
 ```sh
-cd ~/frametop-extensions
+cd ~/frametop-stereo-test
+git pull --ff-only
+./screens/build.sh
+./scripts/frame.sh -C screens './build/ft-handtest --stereo-preview --seconds 20'
+```
+
+The test draws a temporary high-contrast calibration panel in front of the
+viewer, using the **same renderer** as the intended extension; it vanishes
+automatically after 20 seconds, or immediately on Ctrl+C. Its default
+strength is 0.003. Maximum runtime is 60 seconds. It doesn't prove that
+arbitrary desktop buffers, cutouts or input are working correctly.
+
+## Then, enable a per-screen preview (only on a verified matching compositor)
+
+Once the isolated panel has been verified, **and** a matching Frametop
+compositor is running without disturbing the existing desktop:
+
+```sh
+cd ~/frametop-depth-test
 python3 plugins/frame-depth/preview.py check-api
 python3 plugins/frame-depth/preview.py status 1
-python3 plugins/frame-depth/preview.py on 1 --strength 0.006
-python3 plugins/frame-depth/preview.py on 1 --strength 0.008 --convergence 0.4 --swap
+python3 plugins/frame-depth/preview.py on 1 --strength 0.003
 python3 plugins/frame-depth/preview.py off 1
 ```
 
@@ -67,9 +94,11 @@ python3 -m unittest discover -s tests -v
 
 - [x] Extension manifest, client, CLI, offline reference and unit tests authored
 - [x] Core-side opt-in rendering path authored on a separate branch
-- [ ] Extension and core CI checks confirmed passing
-- [ ] Core builds on ARM64 Steam Frame
-- [ ] Live stereo preview device validation
+- [x] Extension and core *offline* CI checks confirmed passing
+- [x] Original compositor branch built on ARM64 Steam Frame before adding the
+      separate smoke-test mode (this new mode still needs an ARM64 rebuild)
+- [ ] Standalone stereo smoke overlay built and visually validated on-device
+- [ ] Live per-screen stereo preview device validation
 - [ ] Performance and eye comfort evaluation
 - [ ] Real depth map inference/transport with hardware benchmarks
 - [ ] Independent install/disable/uninstall and rollback verified on-device
