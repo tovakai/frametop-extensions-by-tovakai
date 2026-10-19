@@ -33,6 +33,7 @@ GUI's first Steam Frame hardware test is pending.
 - `apps/extension-manager/`: independent settings application and metadata-first plugin manager.
 - `sdk/frametop_ext/`: standard-library Python client for Frametop's versioned extension commands.
 - `plugins/spatial-profiles/`: **v0.1.0 experimental**: independent world-anchored spatial profiles with native 450 ms transitions, six slots and read-only inspection of legacy profiles.
+- `plugins/frame-depth/`: **experimental stereo preview**: optional per-screen GPU stereo diagnostic (currently brightness-as-fake-depth; requires matching core feature branch, not headset-tested).
 - `plugins/spatial-follow/`, `plugins/gaze-attention/`, `plugins/spatial-toolbar/`, `plugins/spatial-instruments/`: future extension specifications.
 - `docs/`: boundaries, manifest conventions and compatibility policy.
 - `tests/`: offline tests without SteamVR or a headset.
