@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "id": "tovakai.frame-depth",
+  "name": "Frame Depth",
+  "version": "0.1.0",
+  "description": "Offline stereoscopic image and depth-map prototype inspired by FrameDepth; no live compositor integration yet",
+  "status": "prototype",
+  "min_extension_api": 1,
+  "required_capabilities": [],
+  "optional_capabilities": [],
+  "entrypoint": "ft_depth.py",
+  "dependencies": []
+}

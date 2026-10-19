@@ -2,7 +2,7 @@
 
 Optional extensions for [Frametop](https://github.com/Frametop/frametop), developed independently from the compositor.
 
-This repository will house **Spatial Profiles**, **Spatial Follow**, **Gaze Attention**, **Spatial Toolbar**, and **Spatial Instruments**. It is separate from [the minimal Frametop extension API fork](https://github.com/tovakai/frametop/tree/rebuild/extension-api) and the [legacy implementation](https://github.com/tovakai/frametop/tree/legacy).
+This repository will house **Spatial Profiles**, **Spatial Follow**, **Gaze Attention**, **Spatial Toolbar**, **Spatial Instruments**, and **Frame Depth**. It is separate from [the minimal Frametop extension API fork](https://github.com/tovakai/frametop/tree/rebuild/extension-api) and the [legacy implementation](https://github.com/tovakai/frametop/tree/legacy).
 
 > **Early development.** Frametop extension API v1 discovery and opacity control have been verified on a Steam Frame. Spatial Profiles v0.1.0 now supports CLI capture and switching of **world-anchored** layouts, with device validation of those operations still pending. There is no plugin installer/manager or full legacy feature parity yet.
 
@@ -34,6 +34,7 @@ GUI's first Steam Frame hardware test is pending.
 - `sdk/frametop_ext/`: standard-library Python client for Frametop's versioned extension commands.
 - `plugins/spatial-profiles/`: **v0.1.0 experimental**: independent world-anchored spatial profiles with native 450 ms transitions, six slots and read-only inspection of legacy profiles.
 - `plugins/spatial-follow/`, `plugins/gaze-attention/`, `plugins/spatial-toolbar/`, `plugins/spatial-instruments/`: future extension specifications.
+- `plugins/frame-depth/`: **v0.1.0 prototype**, dependency-free offline stereo image renderer, optional ML depth adapter, and documented live compositor integration gap. **Not a live VR effect.**
 - `docs/`: boundaries, manifest conventions and compatibility policy.
 - `tests/`: offline tests without SteamVR or a headset.
 
@@ -62,6 +63,15 @@ python3 plugins/spatial-profiles/profiles.py use-slot 1
 ```
 
 New profiles are stored in `~/.config/frametop-extensions/spatial-profiles.json` and **do not overwrite** upstream or legacy Frametop layouts. See [Spatial Profiles usage and limitations](plugins/spatial-profiles/README.md) before testing.
+
+## Frame Depth prototype
+
+```sh
+python3 plugins/frame-depth/ft_depth.py doctor
+python3 plugins/frame-depth/ft_depth.py demo --output-dir /tmp/frame-depth-demo
+```
+
+The stereo preview saves a PPM image; it does not modify screens or start a VR compositor effect. See [Frame Depth limitations and commands](plugins/frame-depth/README.md).
 
 ## Developer check
 

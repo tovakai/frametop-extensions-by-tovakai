@@ -15,6 +15,7 @@ There is **no dynamic plugin loader or stable external event stream yet**. The o
 - Gaze Attention: alpha transitions and attention targeting, reusing upstream's gaze system. Requires an independent read-only gaze-target feed; must not enable gaze-to-pointer as a side effect.
 - Spatial Toolbar: independent OpenVR UI overlay, with start/tasks/display/tray adapters. Screen docking must be implemented against generic attachment hooks, not private compositor objects.
 - Spatial Instruments: composable widgets with the same anchor and attention contracts; restore them only after follow and gaze primitives are validated.
+- Frame Depth: offline SBS prototype. Live depth-aware stereo will require generic frame/effect APIs and arbitration with the core hand-cutout stereo pipeline. No renderer hook or startup lifecycle exists in v1; see `plugins/frame-depth/LIVE-INTEGRATION.md`.
 
 ## Extension convention (draft)
 
