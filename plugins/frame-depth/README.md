@@ -30,11 +30,18 @@ git pull --ff-only
 ./scripts/frame.sh -C screens './build/ft-handtest --stereo-preview --seconds 20'
 ```
 
-The test draws a temporary high-contrast calibration panel in front of the
-viewer, using the **same renderer** as the intended extension; it vanishes
-automatically after 20 seconds, or immediately on Ctrl+C. Its default
-strength is 0.003. Maximum runtime is 60 seconds. It doesn't prove that
-arbitrary desktop buffers, cutouts or input are working correctly.
+The test now draws an **explicit stereoscopic calibration scene**: an
+unshifted grid, an orange square with foreground disparity, a cyan circle
+with background disparity, and eye-order markers (red in LEFT eye, blue in
+RIGHT eye). It uses the **same renderer** as the intended extension; it vanishes
+automatically after 20 seconds, or immediately on Ctrl+C. Default strength
+is 0.006, with optional `--stereo-strength` and `--stereo-swap` to diagnose
+perception or eye-order problems. Use `--stereo-luminance` to reproduce the
+original checkerboard test. Maximum runtime is 60 seconds.
+
+This calibrates known stereo disparity, not depth inference or a desktop
+screen. It doesn't prove that arbitrary desktop buffers, cutouts or input
+are working correctly.
 
 ## Then, enable a per-screen preview (only on a verified matching compositor)
 
