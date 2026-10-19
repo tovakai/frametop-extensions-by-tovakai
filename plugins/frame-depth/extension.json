@@ -1,0 +1,15 @@
+{
+  "manifest_version": 1,
+  "id": "tovakai.frame-depth",
+  "name": "FrameDepth",
+  "version": "0.1.0",
+  "description": "Experimental depth-image-based stereoscopic view synthesis for Frametop displays",
+  "status": "prototype",
+  "min_extension_api": 1,
+  "required_capabilities": [],
+  "optional_capabilities": [
+    "screen.status",
+    "screen.stereo.submit"
+  ],
+  "entrypoint": "depth.py"
+}
