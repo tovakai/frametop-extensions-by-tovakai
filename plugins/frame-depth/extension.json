@@ -3,13 +3,14 @@
   "id": "tovakai.frame-depth",
   "name": "FrameDepth",
   "version": "0.1.0",
-  "description": "Experimental depth-image-based stereoscopic view synthesis for Frametop displays",
+  "description": "Optional per-screen GPU stereo preview with luminance-based diagnostic depth",
   "status": "prototype",
   "min_extension_api": 1,
-  "required_capabilities": [],
-  "optional_capabilities": [
-    "screen.status",
-    "screen.stereo.submit"
+  "required_capabilities": [
+    "screen.stereo.preview"
   ],
-  "entrypoint": "depth.py"
+  "optional_capabilities": [
+    "screen.status"
+  ],
+  "entrypoint": "preview.py"
 }
