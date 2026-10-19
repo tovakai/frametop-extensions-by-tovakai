@@ -1,40 +1,78 @@
-# FrameDepth (prototype)
+# FrameDepth (experimental stereo preview)
 
-An **offline reference prototype** for turning a flat image plus a normalized depth map into separate eye views. Inspired by [its-ven/FrameDepth](https://github.com/its-ven/FrameDepth). This implementation is independent and does not copy FrameDepth code or bundle any model weights.
+An independently installable **control-plane extension** for Frametop's opt-in
+GPU stereo preview. Inspired by [its-ven/FrameDepth](https://github.com/its-ven/FrameDepth).
+All implementation in this repository is independent; it does not reuse the
+original project's code or ship model weights.
 
-**Current reality:** The included renderer works on nested Python pixel arrays. It does **not** capture screens, estimate depth, upload GPU textures, install hooks, or change the SteamVR scene. Do not advertise it as a working VR plugin yet.
+**Implemented:** a capability-checked CLI to enable and disable a live per-screen
+SBS stereo diagnostic in the [Frametop core preview branch](https://github.com/tovakai/frametop/tree/feature/stereo-preview-extension).
+The renderer uses image **brightness as fake depth**. This can make flat UI look
+strange and is **not** Depth Anything, actual 3D reconstruction or a usable
+monocular depth estimation system yet. The core branch is NOT device-tested.
 
-## Run
+## How to try it (only after safely building the matching core branch)
+
+```sh
+cd ~/frametop-extensions
+python3 plugins/frame-depth/preview.py check-api
+python3 plugins/frame-depth/preview.py status 1
+python3 plugins/frame-depth/preview.py on 1 --strength 0.006
+python3 plugins/frame-depth/preview.py on 1 --strength 0.008 --convergence 0.4 --swap
+python3 plugins/frame-depth/preview.py off 1
+```
+
+If the extension API is missing, the controller **refuses** to enable the effect.
+Use `off` to get back to normal 2D. Only local desktop screens are supported.
+The compositor owns the state and forgets it when restarted. The extension
+writes no persistent settings, SteamVR files, startup services or layouts.
+
+## Offline reference renderer
+
+`depth.py` is an independent pure-Python forward-splat reference that accepts
+an RGB image array plus a separate normalized depth map. This is **not** the
+live GPU renderer, which currently uses brightness as its temporary depth.
 
 ```sh
 python3 plugins/frame-depth/depth.py --demo
 python3 -m unittest discover -s tests -v
 ```
 
-## Planned architecture
+## Current architecture
 
-1. Frametop provides a versioned, read-only frame-texture sharing API (DMA-BUF with explicit synchronization and ownership), per-screen lifecycle and display dimensions.
-2. A native ARM64 worker estimates a depth map asynchronously, ideally using GPU/NPU acceleration after benchmarking on the Frame. Start with synthetic depth and a recorded-map mode before deploying model inference.
-3. A GPU compositor renders two eye textures from the original frame and depth map. Keep original flat frames available as a zero-overhead fallback.
-4. A generic compositor stereo-submit hook accepts the eye views and reports support through an explicit capability; no monkey-patching SteamVR overlays.
-5. Per-screen settings, saved independently from spatial profiles, control enablement, disparity strength, convergence, eye swap, inference resolution and frame budget.
+- FrameDepth CLI -> Frametop extension API -> per-screen preview settings.
+- Frametop's **existing** GPU cutout pipeline imports each desktop frame, samples
+  shifted views into one DRM/GBM side-by-side texture and hands it to OpenVR.
+- Hand cutouts, when available, are composited in the same pass. Turning off
+  stereo returns the original frame directly when no cutouts are needed.
+- The preview mode is optional and starts disabled, including after restart.
+- No frame sharing, arbitrary depth-map submission, actual inference, background
+  worker or third-party OpenVR overlay takeover exists yet.
 
-## Constraints
+## Next engineering steps
 
-- **No core modifications in this repository.** Required generic API hooks must be reviewed in the separate Frametop core repository.
-- **Fail closed:** if texture sharing, stereo submission or synchronization is unsupported, stay in ordinary 2D mode.
-- **Do not block the compositor render loop** waiting for inference. Reuse the latest completed depth map, discard stale jobs, and rate-limit the worker.
-- **No surprise install actions:** never touch SteamVR configuration, services, existing layouts or other extensions.
-- **Safety:** clamp stereo disparity and validate inputs. Avoid stale textures, crashes and visual instability.
-- **Licensing:** verify rights for every inference model and runtime before packaging. FrameDepth upstream's source license must be clarified before copying any of its code.
-- **Device verification pending:** CPU/NPU/Vulkan inference performance and real stereo overlay behavior remain unmeasured.
+1. Test the matching compositor and extension branches on the Frame; verify eye
+   order, OpenVR flags, mouse mapping, alpha cutouts, buffer lifetimes and fallback.
+2. Benchmark a native ARM64 Depth Anything V2 Small pipeline independently.
+   NPU access under SteamOS is unproven; measure GPU, CPU and frame-time cost.
+3. Design a **new** permissioned, synchronized depth-map transport capability
+   with well-defined size, format, security, backpressure, epoch and ownership.
+   Do not overload the debug CLI with raw images.
+4. Replace the diagnostic shader with true depth-texture sampling, edge-aware
+   warping, hole filling, temporal smoothing and bounds against eye strain.
+5. Add per-screen settings and proper extension manager integration. Preserve
+   the six spatial slots, attention, floating-window behavior and existing input.
 
-## Acceptance gates
+## Safety and release gates
 
-- [x] Manifest and offline reference stereo renderer
-- [x] Unit tests for zero strength, inversion, invalid inputs and occlusion
-- [ ] Generic compositor texture and stereo capabilities designed/reviewed
-- [ ] Native GPU stereo renderer on a test texture
-- [ ] ARM64 depth inference benchmarks
-- [ ] Real Frame display tested with input, handcut, curvature and profile transitions
-- [ ] Independent enable/disable and uninstall tested on-device
+- [x] Extension manifest, client, CLI, offline reference and unit tests authored
+- [x] Core-side opt-in rendering path authored on a separate branch
+- [ ] Extension and core CI checks confirmed passing
+- [ ] Core builds on ARM64 Steam Frame
+- [ ] Live stereo preview device validation
+- [ ] Performance and eye comfort evaluation
+- [ ] Real depth map inference/transport with hardware benchmarks
+- [ ] Independent install/disable/uninstall and rollback verified on-device
+
+**Licensing:** The original FrameDepth repository should not be vendored without
+explicit permission. The reference algorithm here is independently written.
