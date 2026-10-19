@@ -88,6 +88,54 @@ class Frametop:
         self.request(f"ext move {self._number(number)} {values} {self._duration(duration_ms)}")
 
 
+    def _require_stereo_preview(self) -> None:
+        if self.api_version() < 1 or "screen.stereo.preview" not in self.capabilities():
+            raise ExtensionError("Frametop does not advertise screen.stereo.preview")
+
+    def stereo_preview_state(self, number: int) -> dict[str, object]:
+        self._require_stereo_preview()
+        parts = self.request(f"ext stereo-preview {self._number(number)} state").split()
+        if (len(parts) != 10 or parts[1] not in ("on", "off") or
+                parts[2] != "strength" or parts[4] != "convergence" or
+                parts[6] != "swap" or parts[8] != "mode" or
+                parts[7] not in ("0", "1")):
+            raise ExtensionError("malformed stereo preview state")
+        try:
+            strength, convergence = float(parts[3]), float(parts[5])
+        except ValueError as exc:
+            raise ExtensionError("invalid stereo preview state") from exc
+        if not (math.isfinite(strength) and math.isfinite(convergence)):
+            raise ExtensionError("non-finite stereo preview state")
+        return {
+            "enabled": parts[1] == "on",
+            "strength": strength,
+            "convergence": convergence,
+            "swap": parts[7] == "1",
+            "mode": parts[9],
+        }
+
+    def stereo_preview(self, number: int, strength: float = 0.006,
+                       convergence: float = 0.5, swap: bool = False) -> None:
+        if (not isinstance(strength, (float, int)) or isinstance(strength, bool) or
+                not math.isfinite(strength) or not 0 <= strength <= 0.03):
+            raise ValueError("stereo preview strength must be 0..0.03")
+        if (not isinstance(convergence, (float, int)) or isinstance(convergence, bool) or
+                not math.isfinite(convergence) or not 0 <= convergence <= 1):
+            raise ValueError("stereo preview convergence must be 0..1")
+        if type(swap) is not bool:
+            raise ValueError("stereo preview swap must be a boolean")
+        number = self._number(number)
+        self._require_stereo_preview()
+        self.request(
+            f"ext stereo-preview {number} on {strength:.6f} {convergence:.6f} {int(swap)}"
+        )
+
+    def stereo_preview_off(self, number: int) -> None:
+        number = self._number(number)
+        self._require_stereo_preview()
+        self.request(f"ext stereo-preview {number} off")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Call Frametop's extension API")
     parser.add_argument("--control", default="ft_screens", help="abstract control socket (default: ft_screens)")

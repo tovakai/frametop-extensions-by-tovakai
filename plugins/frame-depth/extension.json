@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "id": "tovakai.frame-depth",
+  "name": "FrameDepth",
+  "version": "0.1.0",
+  "description": "Optional per-screen GPU stereo preview with luminance-based diagnostic depth",
+  "status": "prototype",
+  "min_extension_api": 1,
+  "required_capabilities": [
+    "screen.stereo.preview"
+  ],
+  "optional_capabilities": [
+    "screen.status"
+  ],
+  "entrypoint": "preview.py"
+}
