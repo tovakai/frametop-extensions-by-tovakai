@@ -47,7 +47,7 @@ class FrameDepthTests(unittest.TestCase):
         image = [[(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]]
         depth = [[0.0, 0.0, 1.0, 0.0]]
         left, right = module.synthesize(image, depth, strength=0.25, convergence=0)
-        self.assertEqual(right[3], (0, 0, 255))
+        self.assertEqual(right[0][3], (0, 0, 255))
 
 
 if __name__ == "__main__":
