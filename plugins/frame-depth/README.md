@@ -9,7 +9,9 @@ original project's code or ship model weights.
 SBS stereo diagnostic in the [Frametop core preview branch](https://github.com/tovakai/frametop/tree/feature/stereo-preview-extension).
 The renderer uses image **brightness as fake depth**. This can make flat UI look
 strange and is **not** Depth Anything, actual 3D reconstruction or a usable
-monocular depth estimation system yet. The core branch is NOT device-tested.
+monocular depth estimation system yet. The isolated stereo calibration overlay
+has now been **visually verified on Steam Frame**, but the full desktop
+compositor integration is NOT device-validated.
 
 ## First, test the GPU without changing the desktop
 
@@ -42,6 +44,33 @@ original checkerboard test. Maximum runtime is 60 seconds.
 This calibrates known stereo disparity, not depth inference or a desktop
 screen. It doesn't prove that arbitrary desktop buffers, cutouts or input
 are working correctly.
+
+## Stage 2: real desktop screenshot (one-shot, no compositor replacement)
+
+The matching core branch now supports a bounded 8-bit P6 snapshot in its
+standalone test overlay. This is a **still frame of a real Frametop screen**,
+not a live feed. Follow the detailed fallback instructions in
+[Frametop's extension documentation](https://github.com/tovakai/frametop/blob/feature/stereo-preview-extension/docs/extensions.md#stage-2-a-real-desktop-screenshot-in-the-isolated-vr-overlay).
+
+```sh
+cd ~/frametop-stereo-test
+git pull --ff-only
+./screens/build.sh
+python3 screens/test/capture-stereo.py \
+  --screen 1 --output /home/steamos/Pictures/frametop-stereo-screen1.ppm
+./scripts/frame.sh -C screens \
+  './build/ft-handtest --ppm /home/steamos/Pictures/frametop-stereo-screen1.ppm --stereo-strength 0.006 --seconds 20'
+```
+
+The capture helper only uses KWin's authorized screenshot interface. If KWin
+refuses it, take the screenshot interactively with Spectacle and convert it to
+P6 as documented in the core repository. **Never disable screenshot permission
+checks for this experiment.** Snapshot files remain on the device.
+
+The screenshot goes through the same GPU/SBS/OpenVR path, but its depth
+remains *brightness-derived fake depth*. The loader and capture converter
+passed offline tests; screenshot permissions and the snapshot overlay still
+need a fresh headset test.
 
 ## Then, enable a per-screen preview (only on a verified matching compositor)
 
@@ -102,9 +131,11 @@ python3 -m unittest discover -s tests -v
 - [x] Extension manifest, client, CLI, offline reference and unit tests authored
 - [x] Core-side opt-in rendering path authored on a separate branch
 - [x] Extension and core *offline* CI checks confirmed passing
-- [x] Original compositor branch built on ARM64 Steam Frame before adding the
-      separate smoke-test mode (this new mode still needs an ARM64 rebuild)
-- [ ] Standalone stereo smoke overlay built and visually validated on-device
+- [x] Original compositor branch built on ARM64 Steam Frame; subsequent
+      timed calibration overlay also reported working on-device
+- [x] Standalone calibrated stereo smoke overlay built and visually validated on-device
+- [x] Static desktop snapshot reader and capture helper added with offline tests
+- [ ] Screenshot capture + static snapshot preview verified on Steam Frame
 - [ ] Live per-screen stereo preview device validation
 - [ ] Performance and eye comfort evaluation
 - [ ] Real depth map inference/transport with hardware benchmarks
