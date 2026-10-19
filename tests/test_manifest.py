@@ -12,13 +12,16 @@ from frametop_ext.manifest import ManifestError, discover_manifests, load_manife
 class ManifestTest(unittest.TestCase):
     def test_discover_metadata_only(self):
         manifests = discover_manifests(ROOT / "plugins")
-        self.assertEqual(len(manifests), 1)
-        item = manifests[0]
-        self.assertEqual(item.id, "tovakai.spatial-profiles")
+        by_id = {manifest.id: manifest for manifest in manifests}
+        self.assertEqual(set(by_id), {"tovakai.spatial-profiles", "tovakai.frame-depth"})
+        item = by_id["tovakai.spatial-profiles"]
         self.assertEqual(item.status, "experimental")
         self.assertEqual(item.version, "0.1.0")
         self.assertEqual(item.min_extension_api, 1)
         self.assertIn("screen.move", item.required_capabilities)
+        depth = by_id["tovakai.frame-depth"]
+        self.assertEqual(depth.entrypoint, "preview.py")
+        self.assertIn("screen.stereo.preview", depth.required_capabilities)
 
     def test_reject_traversal_and_invalid_capabilities(self):
         with tempfile.TemporaryDirectory() as directory:
