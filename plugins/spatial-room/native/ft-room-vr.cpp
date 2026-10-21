@@ -209,7 +209,7 @@ void draw_hud() {
     const std::array<std::string,4> lines={
         "SPATIAL ROOM",hudText.substr(0,56),
         "R TRIG PLACE  R A CLOSE/SELECT  R GRIP MODE",
-        "R X SAVE Y PRESET  DPAD U/D 5CM L/R 1DEG"
+        "R X SAVE Y PRESET  DPAD U/D 1CM L/R 1DEG"
     };
     for(size_t ln=0;ln<lines.size();++ln) {
         int x=15,y=9+int(ln)*34;
