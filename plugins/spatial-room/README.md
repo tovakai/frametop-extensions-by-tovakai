@@ -6,14 +6,14 @@ This is a first OpenVR overlay prototype, not yet a polished Quest room editor. 
 
 ## Build on Steam Frame (opt-in)
 
-Prerequisites: Frametop checkout at ~/frametop, its existing dev distrobox, and a cloned extensions checkout at ~/frametop-extensions. This is a **separate build** and makes no system changes.
+Prerequisites: the existing Frametop **dev** distrobox, SteamVR's ARM64 OpenVR library on the Frame, and a cloned extensions checkout at ~/frametop-extensions. **The Frametop source checkout is no longer required.** This is a separate build and makes no system changes.
 
     cd ~/frametop-extensions
     git fetch origin feat/spatial-room-manual-layout
     git switch feat/spatial-room-manual-layout
     bash plugins/spatial-room/native/build.sh
 
-The build uses Frametop's pinned OpenVR SDK 2.15.6 and SteamVR's libopenvr_api on the headset. If your checkout is somewhere else, set FRAMETOP_ROOT to its path. Compilation happens in the existing "dev" distrobox. Test/build has no automatic install step.
+The build downloads and verifies the same pinned OpenVR SDK header (v2.15.6) Frametop uses, independent of its installation path, and links to SteamVR's libopenvr_api on the headset. It locates distrobox in ~/.local/bin as well as PATH. Compilation happens in the existing "dev" distrobox. Build does not install or restart anything.
 
 Start in Frametop Desktop mode, ideally with passthrough visible:
 
