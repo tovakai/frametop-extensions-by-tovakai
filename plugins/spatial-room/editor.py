@@ -112,6 +112,17 @@ class Editor:
                 raise ValueError("ceiling would cut through furniture")
             self._checkpoint()
             self.room.ceiling_y = ceiling_y
+        elif action == "rotate_box":
+            ident = event.get("id")
+            delta = finite(event.get("delta_deg"), "rotation delta")
+            if not -360 <= delta <= 360:
+                raise ValueError("rotation increment outside allowed range")
+            box = next((b for b in self.room.boxes if b.id == ident), None)
+            if box is None:
+                raise ValueError("box ID not found")
+            if delta:
+                self._checkpoint()
+                box.yaw_deg = (box.yaw_deg + delta) % 360
         elif action == "delete_box":
             ident = event.get("id")
             if not isinstance(ident, str) or not any(b.id == ident for b in self.room.boxes):
