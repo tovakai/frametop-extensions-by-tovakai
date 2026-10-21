@@ -32,6 +32,8 @@ BUTTON_ACTIONS = {
     ("right", "x"): "save",
     ("left", "dpad_left"): "rotate_left",
     ("left", "dpad_right"): "rotate_right",
+    ("left", "dpad_up"): "height_up",
+    ("left", "dpad_down"): "height_down",
 }
 
 
