@@ -96,7 +96,7 @@ def hud(editor: Editor, mode: str, label: str, height: float, yaw: float, error=
     if selected_id:
         box = next((b for b in room.boxes if b.id == selected_id), None)
         if box is not None:
-            return f"EDIT {box.label} {box.yaw_deg:.0f} DEG  DLEFT -1 DRIGHT +1"
+            return f"EDIT {box.label} H {box.h:.2f}M YAW {box.yaw_deg:.0f}  UP/DN 5CM"
     if mode == "erase":
         return "ERASE MODE  TRIGGER DELETE  GRIP ADD"
     if mode == "box":
@@ -234,8 +234,25 @@ class Session:
                 self.selected_id = None
         elif cmd == "label":
             self.label = LABELS[(LABELS.index(self.label)+1) % len(LABELS)]
-        elif cmd == "height":
-            self.height = HEIGHTS[(HEIGHTS.index(self.height)+1) % len(HEIGHTS)]
+        elif cmd in ("height", "height_up", "height_down"):
+            # Right Y: advance to the next coarse preset. Left D-pad up/down:
+            # nudge 5 cm. Selected furniture updates immediately; otherwise
+            # the setting applies to the next placed box.
+            box = next((b for b in self.editor.room.boxes if b.id == self.selected_id), None)
+            current = box.h if box is not None else self.height
+            if cmd == "height":
+                next_height = next((h for h in HEIGHTS if h > current + 1e-8), HEIGHTS[0])
+            else:
+                step = 0.05 if cmd == "height_up" else -0.05
+                next_height = round(current + step, 2)
+            if not 0.05 <= next_height <= 10:
+                raise ValueError("furniture height must stay between 5 cm and 10 m")
+            if box is not None:
+                self.editor.dispatch({"action": "resize_box", "id": box.id, "height": next_height})
+            else:
+                if next_height > self.editor.room.ceiling_y - self.editor.room.floor_y + 1e-9:
+                    raise ValueError("furniture height exceeds room ceiling")
+                self.height = next_height
         elif cmd in ("rotate", "rotate_left", "rotate_right"):
             # Thumbstick click: +5 degrees. Left D-pad: -1 / +1 degrees.
             delta = {"rotate": 5, "rotate_left": -1, "rotate_right": 1}[cmd]
