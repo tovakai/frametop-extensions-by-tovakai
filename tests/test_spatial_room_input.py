@@ -27,10 +27,12 @@ def update(side, path, value):
 class ControllerInputTests(unittest.TestCase):
     def test_frame_specific_buttons_are_mapped_to_actual_hands(self):
         self.assertEqual(BUTTON_ACTIONS[("right", "trigger")], "place")
-        self.assertEqual(BUTTON_ACTIONS[("left", "x")], "save")
-        self.assertEqual(BUTTON_ACTIONS[("left", "y")], "height")
-        self.assertNotIn(("right", "x"), BUTTON_ACTIONS)
-        self.assertNotIn(("right", "y"), BUTTON_ACTIONS)
+        self.assertEqual(BUTTON_ACTIONS[("right", "x")], "save")
+        self.assertEqual(BUTTON_ACTIONS[("right", "y")], "height")
+        self.assertEqual(BUTTON_ACTIONS[("left", "dpad_left")], "rotate_left")
+        self.assertEqual(BUTTON_ACTIONS[("left", "dpad_right")], "rotate_right")
+        self.assertNotIn(("left", "x"), BUTTON_ACTIONS)
+        self.assertNotIn(("left", "y"), BUTTON_ACTIONS)
 
     def test_rising_edges_only(self):
         mapper = ButtonMapper()
@@ -39,8 +41,19 @@ class ControllerInputTests(unittest.TestCase):
         self.assertEqual(mapper.feed(update("right", "trigger", True), sides), [])
         self.assertEqual(mapper.feed(update("right", "trigger", False), sides), [])
         self.assertEqual(mapper.feed(update("right", "trigger", True), sides), ["place"])
-        self.assertEqual(mapper.feed(update("left", "x", True), sides), ["save"])
-        self.assertEqual(mapper.feed(update("right", "x", True), sides), [])
+        self.assertEqual(mapper.feed(update("right", "x", True), sides), ["save"])
+        self.assertEqual(mapper.feed(update("left", "dpad_left", True), sides), ["rotate_left"])
+        self.assertEqual(mapper.feed(update("left", "dpad_right", True), sides), ["rotate_right"])
+        self.assertEqual(mapper.feed(update("left", "x", True), sides), [])
+
+    def test_legacy_bindings_use_frame_correct_hands(self):
+        manifest = json.loads((PLUGIN / "native/actions/bindings_frame_controller.json").read_text())
+        sources = manifest["bindings"]["/actions/room"]["sources"]
+        actual = {source["inputs"]["click"]["output"].rsplit("/", 1)[-1]: source["path"] for source in sources}
+        self.assertEqual(actual["height"], "/user/hand/right/input/y")
+        self.assertEqual(actual["save"], "/user/hand/right/input/x")
+        self.assertEqual(actual["rotate_left"], "/user/hand/left/input/dpad_left")
+        self.assertEqual(actual["rotate_right"], "/user/hand/left/input/dpad_right")
 
     def test_controller_root_changes_and_bad_events_are_ignored(self):
         mapper = ButtonMapper()
