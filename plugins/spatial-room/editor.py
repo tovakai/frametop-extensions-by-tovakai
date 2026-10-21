@@ -112,6 +112,17 @@ class Editor:
                 raise ValueError("ceiling would cut through furniture")
             self._checkpoint()
             self.room.ceiling_y = ceiling_y
+        elif action == "set_box_label":
+            ident = event.get("id")
+            label = event.get("label")
+            if label not in LABELS:
+                raise ValueError("unsupported furniture label")
+            box = next((b for b in self.room.boxes if b.id == ident), None)
+            if box is None:
+                raise ValueError("box ID not found")
+            if box.label != label:
+                self._checkpoint()
+                box.label = label
         elif action == "resize_box":
             ident = event.get("id")
             height = finite(event.get("height"), "furniture height")
