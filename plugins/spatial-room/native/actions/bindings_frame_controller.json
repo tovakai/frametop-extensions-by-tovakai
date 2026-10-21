@@ -52,7 +52,7 @@
           }
         },
         {
-          "path": "/user/hand/right/input/y",
+          "path": "/user/hand/left/input/y",
           "mode": "button",
           "inputs": {
             "click": {
@@ -70,7 +70,7 @@
           }
         },
         {
-          "path": "/user/hand/right/input/x",
+          "path": "/user/hand/left/input/x",
           "mode": "button",
           "inputs": {
             "click": {
