@@ -112,6 +112,18 @@ class Editor:
                 raise ValueError("ceiling would cut through furniture")
             self._checkpoint()
             self.room.ceiling_y = ceiling_y
+        elif action == "set_alignment":
+            dx = finite(event.get("dx"), "alignment dx")
+            dz = finite(event.get("dz"), "alignment dz")
+            yaw = finite(event.get("yaw_deg"), "alignment yaw")
+            if not all(abs(v) <= 25 for v in (dx, dz)):
+                raise ValueError("room translation exceeds 25 metres")
+            if abs(yaw) > 36000:
+                raise ValueError("room rotation is outside allowed range")
+            self._checkpoint()
+            self.room.alignment.dx = dx
+            self.room.alignment.dz = dz
+            self.room.alignment.yaw_deg = yaw % 360
         elif action == "set_box_label":
             ident = event.get("id")
             label = event.get("label")
