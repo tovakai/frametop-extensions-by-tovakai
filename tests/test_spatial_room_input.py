@@ -33,6 +33,7 @@ class ControllerInputTests(unittest.TestCase):
         self.assertEqual(BUTTON_ACTIONS[("left", "dpad_right")], "rotate_right")
         self.assertEqual(BUTTON_ACTIONS[("left", "dpad_up")], "height_up")
         self.assertEqual(BUTTON_ACTIONS[("left", "dpad_down")], "height_down")
+        self.assertEqual(BUTTON_ACTIONS[("left", "trigger")], "align")
         self.assertNotIn(("left", "x"), BUTTON_ACTIONS)
         self.assertNotIn(("left", "y"), BUTTON_ACTIONS)
 
@@ -41,7 +42,7 @@ class ControllerInputTests(unittest.TestCase):
         sides = {"/user/hand/right": "right", "/user/hand/left": "left"}
         self.assertEqual(mapper.feed(update("right", "trigger", True), sides), ["place"])
         self.assertEqual(mapper.feed(update("right", "trigger", True), sides), [])
-        self.assertEqual(mapper.feed(update("right", "trigger", False), sides), [])
+        self.assertEqual(mapper.feed(update("right", "trigger", False), sides), ["place_up"])
         self.assertEqual(mapper.feed(update("right", "trigger", True), sides), ["place"])
         self.assertEqual(mapper.feed(update("right", "x", True), sides), ["save"])
         self.assertEqual(mapper.feed(update("left", "dpad_left", True), sides), ["rotate_left"])
@@ -60,6 +61,7 @@ class ControllerInputTests(unittest.TestCase):
         self.assertEqual(actual["rotate_right"], "/user/hand/left/input/dpad_right")
         self.assertEqual(actual["height_up"], "/user/hand/left/input/dpad_up")
         self.assertEqual(actual["height_down"], "/user/hand/left/input/dpad_down")
+        self.assertEqual(actual["align"], "/user/hand/left/input/trigger")
 
     def test_controller_root_changes_and_bad_events_are_ignored(self):
         mapper = ButtonMapper()
