@@ -26,7 +26,7 @@ DEFAULT_ROOM = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config
     "frametop-extensions" / "spatial-room" / "room.json"
 
 
-def segments_for_room(room: Room, pending=None, aiming=None, height=0.75, yaw=0.0):
+def segments_for_room(room: Room, pending=None, aiming=None, height=0.75, yaw=0.0, selection_id=None):
     """World-space edges (a,b,palette). Same -Z and yaw convention as FramePort."""
     result = []
     cs = room.corners
@@ -40,7 +40,8 @@ def segments_for_room(room: Room, pending=None, aiming=None, height=0.75, yaw=0.
     for p in cs:
         result.append(((p[0], room.floor_y, p[1]), (p[0], room.ceiling_y, p[1]), 0))
     for obj in room.boxes:
-        result.extend(box_edges(obj.cx, obj.cz, obj.top_y, obj.w, obj.d, obj.h, obj.yaw_deg, 1))
+        result.extend(box_edges(obj.cx, obj.cz, obj.top_y, obj.w, obj.d, obj.h, obj.yaw_deg,
+                                3 if obj.id == selection_id else 1))
     if pending is not None and aiming is not None:
         try:
             preview = box_between(pending, aiming, "OTHER", height, room.floor_y, yaw)
@@ -70,12 +71,27 @@ def box_edges(cx, cz, top_y, w, d, h, yaw, palette):
     return out
 
 
+
+def box_at_point(room: Room, point: tuple[float, float], tolerance: float = 0.10) -> str | None:
+    """Hit-test yawed furniture footprints. Returns topmost (latest) suitable box."""
+    x, z = point
+    for box in reversed(room.boxes):
+        c, s = math.cos(math.radians(box.yaw_deg)), math.sin(math.radians(box.yaw_deg))
+        dx, dz = x - box.cx, z - box.cz
+        local_x, local_z = c*dx - s*dz, s*dx + c*dz
+        if abs(local_x) <= box.w/2 + tolerance and abs(local_z) <= box.d/2 + tolerance:
+            return box.id
+    return None
+
+
 def hud(editor: Editor, mode: str, label: str, height: float, yaw: float, error="") -> str:
     if error:
         return ("ERROR " + error.upper())[:56]
     room = editor.room
     if not room.closed:
         return f"WALLS {len(room.corners)} CORNERS  A TO CLOSE  X SAVE"
+    if mode == "erase":
+        return "ERASE MODE  TRIGGER BOX TO DELETE  GRIP ADD"
     if mode == "box":
         pending = " SECOND CORNER" if editor.pending else ""
         return f"BOX {label} {height:.2f}M {int(yaw)} DEG{pending}"
@@ -148,9 +164,9 @@ class Session:
         if not parts:
             return
         cmd = parts[0]
-        if cmd == "ready":
+        if cmd in ("ready", "universe"):
             if len(parts) != 2:
-                raise ValueError("malformed ready event")
+                raise ValueError("malformed tracking universe event")
             self.handle_ready(int(parts[1]))
             return
         if not self.universe_known:
@@ -166,6 +182,14 @@ class Session:
                 except ValueError:
                     self.aim = None
                 return
+            if self.mode == "erase":
+                hit = floor_hit(**evt, floor_y=self.editor.room.floor_y)
+                ident = box_at_point(self.editor.room, hit)
+                if ident is None:
+                    raise ValueError("point inside a furniture box to erase it")
+                self.editor.dispatch({"action": "delete_box", "id": ident})
+                self.aim = None
+                return
             action = ("corner" if self.mode == "walls" else
                       "box_finish" if self.editor.pending else "box_start")
             evt["action"] = action
@@ -175,7 +199,9 @@ class Session:
             self.aim = None
         elif cmd == "mode":
             if self.editor.room.closed:
-                self.mode = "box" if self.mode == "walls" else "walls"
+                if self.editor.pending is not None:
+                    raise ValueError("finish or cancel the current box before switching tools")
+                self.mode = "erase" if self.mode == "box" else "box"
             else:
                 self.mode = "walls"
         elif cmd == "confirm":
@@ -207,8 +233,10 @@ class Session:
 
     def display(self) -> str:
         header = hud(self.editor, self.mode, self.label, self.height, self.yaw, self.error)
-        geom = segments_for_room(self.editor.room, pending=self.editor.pending,
-                                 aiming=self.aim, height=self.height, yaw=self.yaw)
+        selection = box_at_point(self.editor.room, self.aim) if self.aim is not None and self.mode == "erase" else None
+        geom = segments_for_room(self.editor.room, pending=self.editor.pending if self.mode == "box" else None,
+                                 aiming=self.aim, height=self.height, yaw=self.yaw,
+                                 selection_id=selection)
         return render_commands(geom, header)
 
 
@@ -229,7 +257,7 @@ def run(native: Path, actions: Path, session: Session) -> int:
                 except (ValueError, TypeError, OSError) as exc:
                     session.error = str(exc)
                     print("Spatial Room:", exc, file=sys.stderr)
-                    if line.startswith("ready"):
+                    if line.startswith(("ready", "universe")):
                         # Universe mismatch is a hard stop, never render old room.
                         break
                 frame = session.display()
