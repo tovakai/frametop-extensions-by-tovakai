@@ -28,8 +28,10 @@ BUTTON_ACTIONS = {
     ("right", "b"): "undo",
     ("right", "bumper"): "label",
     ("right", "thumbstick"): "rotate",
-    ("left", "y"): "height",
-    ("left", "x"): "save",
+    ("right", "y"): "height",
+    ("right", "x"): "save",
+    ("left", "dpad_left"): "rotate_left",
+    ("left", "dpad_right"): "rotate_right",
 }
 
 
