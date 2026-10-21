@@ -43,6 +43,14 @@
     {
       "name": "/actions/room/in/save",
       "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/rotate_left",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/rotate_right",
+      "type": "boolean"
     }
   ],
   "localization": [
@@ -56,7 +64,9 @@
       "/actions/room/in/label": "label",
       "/actions/room/in/height": "height",
       "/actions/room/in/rotate": "rotate",
-      "/actions/room/in/save": "save"
+      "/actions/room/in/save": "save",
+      "/actions/room/in/rotate_left": "rotate_left",
+      "/actions/room/in/rotate_right": "rotate_right"
     }
   ]
 }
