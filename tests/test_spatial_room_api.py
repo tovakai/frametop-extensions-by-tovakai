@@ -42,6 +42,7 @@ class RoomAPIAndEraseTest(unittest.TestCase):
 
     def test_erase_mode_uses_ray_to_select_rotated_box(self):
         s = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
+        s.handle("ready 73")
         s.handle("mode")
         self.assertEqual(s.mode, "erase")
         # Ray origin directly above the furniture footprint.
