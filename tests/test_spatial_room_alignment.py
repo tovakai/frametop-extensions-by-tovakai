@@ -151,6 +151,33 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(r.alignment.origin,tuple(changed))
         self.assertTrue(s.origin_verified)
 
+    def test_readonly_api_requires_explicit_origin_to_claim_registration(self):
+        r = room()
+        r.alignment.origin = MATRIX
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/"r.json"
+            save(path,r)
+            self.assertFalse(snapshot(path,universe=73)["alignment_verified"])
+            self.assertTrue(snapshot(path,universe=73,standing_origin=MATRIX)["alignment_verified"])
+            changed=list(MATRIX)
+            changed[7]=0.05
+            self.assertFalse(snapshot(path,universe=73,standing_origin=changed)["alignment_verified"])
+
+    def test_unverified_origin_allows_json_backup_but_blocks_frameport_staging(self):
+        with tempfile.TemporaryDirectory() as temp:
+            r = room()
+            session = Session(Editor(r),path=Path(temp)/"source.json",
+                              export_dir=Path(temp)/"exports")
+            session.handle("ready 73")
+            session.handle("origin "+" ".join(map(str,MATRIX)))
+            session.handle("save")
+            self.assertTrue((Path(temp)/"source.json").is_file())
+            self.assertFalse((Path(temp)/"exports").exists())
+            session.handle("align")
+            session.handle("confirm")
+            session.handle("save")
+            self.assertEqual(len(list((Path(temp)/"exports").glob("room-*.txt"))),1)
+
     def test_reject_invalid_alignment_without_mutating_local_geometry(self):
         r=room()
         with self.assertRaises(ValueError):
