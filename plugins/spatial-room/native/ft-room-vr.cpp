@@ -208,7 +208,7 @@ void draw_hud() {
     const std::array<std::string,4> lines={
         "SPATIAL ROOM",hudText.substr(0,56),
         "TRIGGER PLACE  GRIP MODE  A CONFIRM  B UNDO",
-        "BUMPER LABEL  Y HEIGHT  STICK ROTATE  X SAVE"
+        "R BUMPER LABEL  L Y HEIGHT  R STICK ROT  L X SAVE"
     };
     for(size_t ln=0;ln<lines.size();++ln) {
         int x=15,y=9+int(ln)*34;
