@@ -143,7 +143,7 @@ class Session:
         self.aim = None
         self.error = ""
         self.last_render = ""
-        self.universe_known = editor.room.universe != 0
+        self.universe_known = False  # wait for the current headset universe on every launch
 
     def handle_ready(self, universe: int) -> None:
         if not 0 <= universe < 2**64:
@@ -249,6 +249,7 @@ def run(native: Path, actions: Path, session: Session) -> int:
     with subprocess.Popen([str(native), str(actions)],
                           stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           text=True, bufsize=1) as process:
+        hard_failure = False
         try:
             for line in process.stdout:
                 try:
@@ -259,6 +260,7 @@ def run(native: Path, actions: Path, session: Session) -> int:
                     print("Spatial Room:", exc, file=sys.stderr)
                     if line.startswith(("ready", "universe")):
                         # Universe mismatch is a hard stop, never render old room.
+                        hard_failure = True
                         break
                 frame = session.display()
                 if frame != session.last_render and process.stdin:
@@ -287,7 +289,7 @@ def run(native: Path, actions: Path, session: Session) -> int:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait()
-    return 0
+    return 1 if hard_failure or process.returncode not in (0, None) else 0
 
 
 def main(argv=None) -> int:
