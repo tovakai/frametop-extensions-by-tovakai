@@ -44,4 +44,4 @@ jobs:
       - name: Check native OpenVR frontend against SDK
         run: |
           cd plugins/spatial-room/native
-          g++ -std=c++17 -Wall -Wextra -Wpedantic -Wno-unused-parameter -Ibuild/include -fsyntax-only ft-room-vr.cpp
+          g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror=unused-function -Wno-unused-parameter -Ibuild/include -fsyntax-only ft-room-vr.cpp
