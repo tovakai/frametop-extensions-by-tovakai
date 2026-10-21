@@ -16,7 +16,8 @@ DEFAULT_ROOM = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config
     "frametop-extensions" / "spatial-room" / "room.json"
 
 
-def snapshot(path: Path = DEFAULT_ROOM, *, universe: int) -> dict:
+def snapshot(path: Path = DEFAULT_ROOM, *, universe: int,
+             standing_origin: tuple[float, ...] | None = None) -> dict:
     """Return immutable-by-convention JSON-like snapshot if tracking universe matches.
 
     A matching universe ID is necessary, but *not sufficient*, to guarantee
@@ -34,7 +35,14 @@ def snapshot(path: Path = DEFAULT_ROOM, *, universe: int) -> dict:
     data["local_alignment"] = room.alignment.to_dict()
     data["space"] = "steamvr-standing"
     data["walls"] = walls(room)
-    data["alignment_verified"] = False
+    saved = room.alignment.origin
+    # Do not claim physical registration based only on a tracking universe ID.
+    # Consumers that can read OpenVR may supply the current raw->standing pose.
+    valid_origin = (standing_origin is not None and isinstance(standing_origin, (tuple, list))
+                    and len(standing_origin) == 12
+                    and all(type(v) in (float, int) and math.isfinite(v) for v in standing_origin))
+    data["alignment_verified"] = bool(saved is not None and valid_origin and
+        all(abs(a-b) <= 0.003 for a,b in zip(saved,standing_origin)))
     return data
 
 
