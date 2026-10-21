@@ -53,4 +53,4 @@ g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Wno-unused-parameter \
     -Ibuild/include ft-room-vr.cpp -L"$libdir" -lopenvr_api \
     "-Wl,-rpath,$libdir" -o build/ft-room-vr
 echo "Built $root/build/ft-room-vr"
-echo "Start with: python3 $root/../session.py"
+echo "Start on the Frame with: bash $root/../run.sh --file ~/Documents/room-test.json"
