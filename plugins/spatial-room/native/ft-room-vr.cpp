@@ -209,7 +209,7 @@ void draw_hud() {
     const std::array<std::string,4> lines={
         "SPATIAL ROOM",hudText.substr(0,56),
         "R TRIG PLACE  R A CLOSE/SELECT  R GRIP MODE",
-        "R X SAVE Y PRESET  DPAD U/D 1CM L/R 1DEG"
+        "L TRIG ALIGN  R X SAVE  D PAD FINE ADJUST"
     };
     for(size_t ln=0;ln<lines.size();++ln) {
         int x=15,y=9+int(ln)*34;
@@ -242,12 +242,12 @@ bool initialize_hud() {
     return true;
 }
 
-const std::array<const char*,12> actions={"place","mode","confirm","undo","label","height","rotate","save","rotate_left","rotate_right","height_up","height_down"};
+const std::array<const char*,13> actions={"place","mode","confirm","undo","label","height","rotate","save","rotate_left","rotate_right","height_up","height_down","align"};
 struct Buttons {
     vr::IVRInput* input=nullptr;
     vr::VRActionSetHandle_t set=0;
-    std::array<vr::VRActionHandle_t,12> handle{};
-    std::array<bool,12> down{};
+    std::array<vr::VRActionHandle_t,13> handle{};
+    std::array<bool,13> down{};
     bool ok=false, warned=false;
     bool init(const char* manifest) {
         input=vr::VRInput();
@@ -281,6 +281,10 @@ struct Buttons {
                     if(r.valid) std::printf("place %.6f %.6f %.6f %.6f %.6f %.6f\n",
                             r.o[0],r.o[1],r.o[2],r.dir[0],r.dir[1],r.dir[2]);
                 } else std::printf("%s\n",actions[i]);
+                std::fflush(stdout);
+            }
+            if(i==0 && down[i] && !pressed && updated) {
+                std::printf("place_up\n");
                 std::fflush(stdout);
             }
             down[i]=pressed;
@@ -325,6 +329,8 @@ void command(std::string line) {
             Ray ray=controller_ray();
             if(ray.valid) std::printf("place %.6f %.6f %.6f %.6f %.6f %.6f\n",
                     ray.o[0],ray.o[1],ray.o[2],ray.dir[0],ray.dir[1],ray.dir[2]);
+        } else if(action=="place_up") {
+            std::printf("place_up\n");
         } else if(std::find(actions.begin(),actions.end(),action)!=actions.end()) {
             std::printf("%s\n",action.c_str());
         }
@@ -377,6 +383,16 @@ int main(int argc,char**argv) {
     auto lastAim=Clock::now()-std::chrono::seconds(1);
     auto lastUniverse=Clock::now();
     uint64_t activeUniverse=universe;
+    // Compare SteamVR's raw->standing pose, not headset position. In particular,
+    // never treat the dashboard's seated recenter as proof that the room moved.
+    auto originPose=vr::VRSystem()->GetRawZeroPoseToStandingAbsoluteTrackingPose();
+    auto emitOrigin=[&](const Matrix& pose) {
+        std::printf("origin");
+        for(int i=0;i<3;++i)for(int j=0;j<4;++j)std::printf(" %.7f",pose.m[i][j]);
+        std::printf("\n");
+        std::fflush(stdout);
+    };
+    emitOrigin(originPose);
     while(!stop) {
         read_commands();
         if(Clock::now()-lastUniverse>std::chrono::seconds(1)) {
@@ -392,6 +408,11 @@ int main(int argc,char**argv) {
                 overlay->HideOverlay(hud);
                 break;
             }
+            const Matrix nextOrigin=vr::VRSystem()->GetRawZeroPoseToStandingAbsoluteTrackingPose();
+            bool changed=false;
+            for(int i=0;i<3;++i)for(int j=0;j<4;++j)
+                if(std::abs(nextOrigin.m[i][j]-originPose.m[i][j])>0.003f)changed=true;
+            if(changed){originPose=nextOrigin;emitOrigin(originPose);}
         }
         const bool isScene=vr::VRApplications()->GetCurrentSceneProcessId()!=0;
         if(isScene!=scene) {scene=isScene;layoutDirty=true;}
