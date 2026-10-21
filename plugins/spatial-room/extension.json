@@ -2,12 +2,12 @@
   "manifest_version": 1,
   "id": "tovakai.spatial-room",
   "name": "Spatial Room",
-  "version": "0.1.0",
-  "description": "Prototype room geometry, ray-driven placement state machine and FramePort export; no VR UI yet",
+  "version": "0.2.0",
+  "description": "Experimental OpenVR manual room overlay and room layout exporter; headset validation pending",
   "status": "prototype",
   "min_extension_api": 1,
   "required_capabilities": [],
   "optional_capabilities": [],
-  "entrypoint": "room.py",
+  "entrypoint": "session.py",
   "dependencies": []
 }
