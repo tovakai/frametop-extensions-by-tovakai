@@ -73,6 +73,7 @@ class VRSessionTest(unittest.TestCase):
             path, exports = Path(tmp)/"room.json", Path(tmp)/"exports"
             room = Room("Room", 123, corners=[(-1,-1),(1,-1),(1,1),(-1,1)], closed=True)
             session = Session(Editor(room), path=path, export_dir=exports)
+            session.handle("ready 123")
             session.handle("save")
             self.assertEqual(load(path).id, room.id)
             snaps = list(exports.iterdir())
@@ -86,6 +87,7 @@ class VRSessionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/"room.json"
             s=Session(Editor(Room("Draft",100)),path=path,export_dir=None)
+            s.handle("ready 100")
             s.handle("save")
             self.assertTrue(path.exists())
             self.assertEqual(list(Path(tmp).iterdir()), [path])
