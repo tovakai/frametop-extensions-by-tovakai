@@ -1,6 +1,6 @@
 # Spatial Room v0.2.0 (experimental VR frontend)
 
-An **optional** Frametop extension for manually blocking out a room inside Steam Frame passthrough. No automatic scanning. No changes to the compositor, SteamVR files or running desktop. This branch is **not device-tested**.
+An **optional** Frametop extension for manually blocking out a room inside Steam Frame passthrough. No automatic scanning. No changes to the compositor, SteamVR files or running desktop. The HUD, cross-marker, and manual furniture placement have been exercised on Steam Frame; this remains an **experimental prototype**.
 
 This is a first OpenVR overlay prototype, not yet a polished Quest room editor. The editor displays floor/ceiling/wall wireframes, furniture cubes, a controller-aim cross and an HMD-relative help panel. You point the **right controller at the floor** and pull trigger to put down corners. It reads controller actions via SteamVR, and stage-space geometry is saved by the Python backend.
 
@@ -19,7 +19,7 @@ Start in Frametop Desktop mode, ideally with passthrough visible:
 
     bash plugins/spatial-room/run.sh --export-frameport ~/Documents/Spatial-Room-Exports
 
-The wrapper starts the Python editor and temporary OpenVR overlay **inside the dev distrobox**, matching the environment where the native binary was compiled. Do not start the native executable directly on the SteamOS host. The CLI starts a temporary OpenVR overlay process. **It does not restart SteamVR or enable controller-global input.** By default the controller watcher uses vrserver's local, read-only input feed on 127.0.0.1:27062; it does not claim any controller buttons. Its first run creates an in-memory unsaved draft. The X button saves your JSON room under ~/.config/frametop-extensions/spatial-room/room.json. If you provided --export-frameport, it also exports a timestamped, FramePort-compatible room.txt into that folder after the outline is closed. This is **staging**, not automatic import.
+The wrapper starts the Python editor and temporary OpenVR overlay **inside the dev distrobox**, matching the environment where the native binary was compiled. Do not start the native executable directly on the SteamOS host. The CLI starts a temporary OpenVR overlay process. **It does not restart SteamVR or enable controller-global input.** By default the controller watcher uses vrserver's local, read-only input feed on 127.0.0.1:27062; it does not claim any controller buttons. Its first run creates an in-memory unsaved draft. The right X button saves your JSON room under ~/.config/frametop-extensions/spatial-room/room.json. If you provided --export-frameport, it also exports a timestamped, FramePort-compatible room.txt into that folder after the outline is closed. This is **staging**, not automatic import.
 
 If you prefer another room, use --file /path/to/different-room.json. A saved room with a different SteamVR universe ID is refused rather than applied at the wrong physical coordinates. If SteamVR returns universe ID 0, placement is blocked until tracking is identifiable.
 
@@ -28,13 +28,16 @@ If you prefer another room, use --file /path/to/different-room.json. A saved roo
 | Controller button | Action |
 |---|---|
 | Trigger (right) | Add wall corner; after walls close, first click starts furniture box, second ends it; in Erase mode, select a box footprint to delete |
-| A (right) | Close polygon (3+ valid corners); with a pending furniture box, cancel its start |
+| A (right) | Close the room (3+ corners). Afterward, aim at an existing furniture box's floor footprint and press A to select it for editing; press A over empty floor to deselect. With a pending furniture box, cancel its start |
 | Grip (right) | After closing the walls, toggle **Add furniture / Erase furniture** |
 | B (right) | Undo last geometry action |
 | Bumper (right) | Cycle furniture label: TABLE, COUCH, BED, STORAGE, SCREEN, LAMP, PLANT, OTHER |
-| Y (left) | Cycle furniture height: 0.45 / 0.75 / 1.1 / 1.8 / 2.3 m |
-| Thumbstick click (right) | Rotate next furniture box 15 degrees |
-| X (left) | Save room and optionally stage a FramePort export |
+| Y (right) | Cycle height for newly placed furniture: 0.45 / 0.75 / 1.1 / 1.8 / 2.3 m |
+| Thumbstick click (right) | Rotate selected existing furniture **+5°**; otherwise rotate the next furniture box +5° |
+| D-pad left/right (left controller) | Rotate selected furniture **−1° / +1°**; otherwise adjust the next furniture box's angle |
+| X (right) | Save room and optionally stage a FramePort export |
+
+**To align an already placed couch:** look down and point the cross-marker at the couch's footprint. Press **right A** to select it (red wireframe). Press **left D-pad left/right** repeatedly to nudge the couch by 1° per press; press **right thumbstick click** for a faster +5° turn. The rotation changes the existing box around its center, not its size or location. Right B undoes a rotation. Aim at empty floor and press right A to deselect. Save with **right X**. This keeps each rotation as an undoable edit.
 
 Quit from the terminal with Ctrl+C. Uncommitted edits remain only in memory. The editor frontend automatically hides its overlays while an ordinary VR scene application is active.
 
