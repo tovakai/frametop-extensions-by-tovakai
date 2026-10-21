@@ -87,17 +87,21 @@ def box_at_point(room: Room, point: tuple[float, float], tolerance: float = 0.10
     return None
 
 
-def hud(editor: Editor, mode: str, label: str, height: float, yaw: float, error="") -> str:
+def hud(editor: Editor, mode: str, label: str, height: float, yaw: float, error="", selected_id=None) -> str:
     if error:
         return ("ERROR " + error.upper())[:56]
     room = editor.room
     if not room.closed:
         return f"WALLS {len(room.corners)} CORNERS  A TO CLOSE  X SAVE"
+    if selected_id:
+        box = next((b for b in room.boxes if b.id == selected_id), None)
+        if box is not None:
+            return f"EDIT {box.label} {box.yaw_deg:.0f} DEG  DLEFT -1 DRIGHT +1"
     if mode == "erase":
-        return "ERASE MODE  TRIGGER BOX TO DELETE  GRIP ADD"
+        return "ERASE MODE  TRIGGER DELETE  GRIP ADD"
     if mode == "box":
         pending = " SECOND CORNER" if editor.pending else ""
-        return f"BOX {label} {height:.2f}M {int(yaw)} DEG{pending}"
+        return f"BOX {label} {height:.2f}M {yaw:.0f} DEG{pending}"
     return f"WALLS {len(room.corners)}  GRIP FOR BOX MODE"
 
 
@@ -143,6 +147,7 @@ class Session:
         self.label = "TABLE"
         self.height = 0.75
         self.yaw = 0.0
+        self.selected_id: str | None = None
         self.aim = None
         self.error = ""
         self.last_render = ""
@@ -191,11 +196,14 @@ class Session:
                 if ident is None:
                     raise ValueError("point inside a furniture box to erase it")
                 self.editor.dispatch({"action": "delete_box", "id": ident})
+                if self.selected_id == ident:
+                    self.selected_id = None
                 self.aim = None
                 return
             action = ("corner" if self.mode == "walls" else
                       "box_finish" if self.editor.pending else "box_start")
             evt["action"] = action
+            self.selected_id = None
             if action == "box_finish":
                 evt.update(label=self.label, height=self.height, yaw_deg=self.yaw)
             self.editor.dispatch(evt)
@@ -205,6 +213,7 @@ class Session:
                 if self.editor.pending is not None:
                     raise ValueError("finish or cancel the current box before switching tools")
                 self.mode = "erase" if self.mode == "box" else "box"
+                self.selected_id = None
             else:
                 self.mode = "walls"
         elif cmd == "confirm":
@@ -214,14 +223,26 @@ class Session:
             elif self.editor.pending is not None:
                 # Keep in place, trigger makes the actual second corner.
                 self.editor.dispatch({"action": "undo"})
+            elif self.mode == "box":
+                # A selects the existing furniture under the cross-marker, or
+                # deselects when pointing at empty floor.
+                hit = box_at_point(self.editor.room, self.aim) if self.aim is not None else None
+                self.selected_id = None if hit == self.selected_id else hit
         elif cmd == "undo":
             self.editor.dispatch({"action": "undo"})
+            if not any(b.id == self.selected_id for b in self.editor.room.boxes):
+                self.selected_id = None
         elif cmd == "label":
             self.label = LABELS[(LABELS.index(self.label)+1) % len(LABELS)]
         elif cmd == "height":
             self.height = HEIGHTS[(HEIGHTS.index(self.height)+1) % len(HEIGHTS)]
-        elif cmd == "rotate":
-            self.yaw = (self.yaw + 15) % 180
+        elif cmd in ("rotate", "rotate_left", "rotate_right"):
+            # Thumbstick click: +5 degrees. Left D-pad: -1 / +1 degrees.
+            delta = {"rotate": 5, "rotate_left": -1, "rotate_right": 1}[cmd]
+            if self.selected_id is not None:
+                self.editor.dispatch({"action": "rotate_box", "id": self.selected_id, "delta_deg": delta})
+            else:
+                self.yaw = (self.yaw + delta) % 360
         elif cmd == "save":
             save(self.path, self.editor.room)
             print(f"Saved room: {self.path}", file=sys.stderr)
@@ -235,8 +256,11 @@ class Session:
             raise ValueError(f"unexpected native event: {cmd}")
 
     def display(self) -> str:
-        header = hud(self.editor, self.mode, self.label, self.height, self.yaw, self.error)
-        selection = box_at_point(self.editor.room, self.aim) if self.aim is not None and self.mode == "erase" else None
+        header = hud(self.editor, self.mode, self.label, self.height, self.yaw, self.error,
+                     selected_id=self.selected_id)
+        selection = self.selected_id
+        if selection is None and self.aim is not None and self.mode == "erase":
+            selection = box_at_point(self.editor.room, self.aim)
         geom = segments_for_room(self.editor.room, pending=self.editor.pending if self.mode == "box" else None,
                                  aiming=self.aim, height=self.height, yaw=self.yaw,
                                  selection_id=selection)
