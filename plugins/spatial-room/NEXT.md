@@ -1,6 +1,6 @@
 # Spatial Room 0.3: alignment, floor authority, visibility and inspector
 
-Status: proposed engineering plan; not implemented unless explicitly marked below.
+Status: **0.3 alignment prototype implemented in draft PR #5; not yet tested on physical headset.** Remaining viewer and inspector items are still proposed.
 
 ## User-tested baseline
 
@@ -12,6 +12,8 @@ Steam Frame successfully saved `~/Documents/room-test.json` and staged a FramePo
 - With an existing furniture box selected via right A, right bumper changes its semantic type without recreating its box. Undo persists until editor exit.
 
 ## First real milestone: registered room alignment
+
+**Implemented in code:** backward-compatible alignment data, preview drag and yaw controls, local↔standing coordinate transforms, stable wall IDs, FramePort export flattening, read-only origin polling and unverified HUD/export gating. **Still pending:** Steam Frame on-device verification, a polished alignment reset menu, explicit approval of automatic correction (not yet supported), and stronger long-term physical anchoring. In Align mode, right B cancels preview and after right A commits the geometry, right B undoes that commit. No vertical position adjustment is applied.
 
 Problem: stored geometry currently sits directly in OpenVR `TrackingUniverseStanding` coordinates. `universe` equality is not sufficient proof of real-world alignment after playspace recenter, chaperone changes, floor recalibration or inside-out relocalization. All walls/boxes should move as one rigid assembly.
 
