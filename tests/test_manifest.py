@@ -12,8 +12,11 @@ from frametop_ext.manifest import ManifestError, discover_manifests, load_manife
 class ManifestTest(unittest.TestCase):
     def test_discover_metadata_only(self):
         manifests = discover_manifests(ROOT / "plugins")
-        self.assertEqual(len(manifests), 1)
-        item = manifests[0]
+        self.assertEqual({m.id for m in manifests}, {"tovakai.spatial-profiles", "tovakai.spatial-room"})
+        room = next(m for m in manifests if m.id == "tovakai.spatial-room")
+        self.assertEqual(room.status, "prototype")
+        self.assertEqual(room.required_capabilities, ())
+        item = next(m for m in manifests if m.id == "tovakai.spatial-profiles")
         self.assertEqual(item.id, "tovakai.spatial-profiles")
         self.assertEqual(item.status, "experimental")
         self.assertEqual(item.version, "0.1.0")
