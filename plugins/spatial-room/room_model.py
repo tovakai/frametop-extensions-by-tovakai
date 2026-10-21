@@ -326,15 +326,19 @@ def to_frameport(room: Room, *, now: int | None = None) -> str:
     # Never move the source geometry or add a second floor Y offset.
     world = room.world_copy()
     corners = world.corners[:]
+    original = room.corners[:]
     if signed_area(corners) < 0:
         corners.reverse()  # FramePort wants positive signed area in XZ.
+        original.reverse()
     timestamp = int(time.time()) if now is None else now
     rows = ["frameport-room 1", f"universe {room.universe}", "source manual", f"time {timestamp}",
             f"room {room.id}", f"floor {_uuid_for(room.id, 'floor')} {_num(room.floor_y)}",
             f"ceiling {_uuid_for(room.id, 'ceiling')} {_num(room.ceiling_y)}",
             "outline " + str(len(corners)) + " " + " ".join(_num(v) for p in corners for v in p)]
-    for a, b in zip(corners, corners[1:] + corners[:1]):
-        rows.append("wall " + " ".join((_uuid_for(room.id, _edge_key(a, b)),
+    for (a,b),(la,lb) in zip(zip(corners,corners[1:]+corners[:1]),
+                               zip(original,original[1:]+original[:1])):
+        # Stable original wall identity, even if the standing origin moves.
+        rows.append("wall " + " ".join((_uuid_for(room.id, _edge_key(la,lb)),
                     *(_num(v) for v in (*a, *b, room.floor_y, room.ceiling_y)))))
     for box in world.boxes:
         rows.append("volume " + " ".join((box.id, box.label, *(_num(v) for v in
