@@ -17,9 +17,9 @@ The build downloads and verifies the same pinned OpenVR SDK header (v2.15.6) Fra
 
 Start in Frametop Desktop mode, ideally with passthrough visible:
 
-    python3 plugins/spatial-room/session.py --export-frameport ~/Documents/Spatial-Room-Exports
+    bash plugins/spatial-room/run.sh --export-frameport ~/Documents/Spatial-Room-Exports
 
-The CLI starts a temporary OpenVR overlay process. **It does not restart SteamVR or enable controller-global input.** Its first run creates an in-memory unsaved draft. The X button saves your JSON room under ~/.config/frametop-extensions/spatial-room/room.json. If you provided --export-frameport, it also exports a timestamped, FramePort-compatible room.txt into that folder after the outline is closed. This is **staging**, not automatic import.
+The wrapper starts the Python editor and temporary OpenVR overlay **inside the dev distrobox**, matching the environment where the native binary was compiled. Do not start the native executable directly on the SteamOS host. The CLI starts a temporary OpenVR overlay process. **It does not restart SteamVR or enable controller-global input.** Its first run creates an in-memory unsaved draft. The X button saves your JSON room under ~/.config/frametop-extensions/spatial-room/room.json. If you provided --export-frameport, it also exports a timestamped, FramePort-compatible room.txt into that folder after the outline is closed. This is **staging**, not automatic import.
 
 If you prefer another room, use --file /path/to/different-room.json. A saved room with a different SteamVR universe ID is refused rather than applied at the wrong physical coordinates. If SteamVR returns universe ID 0, placement is blocked until tracking is identifiable.
 
@@ -44,7 +44,7 @@ Quit from the terminal with Ctrl+C. Uncommitted edits remain only in memory. The
 
 Use a temporary draft:
 
-    python3 plugins/spatial-room/session.py --file /tmp/frametop-room-test.json
+    bash plugins/spatial-room/run.sh --file /tmp/frametop-room-test.json
 
 Remove the JSON when finished. No background service is installed. Running the editor is voluntary. Until live testing confirms controller bindings and geometry alignment, use the editor for experiments, not as a protective guardian or obstacle detector. The wireframes are **not physical collision geometry** and cannot prevent you from walking into furniture.
 
