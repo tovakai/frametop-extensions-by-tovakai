@@ -348,8 +348,24 @@ int main(int argc,char**argv) {
     if(flags>=0)fcntl(STDIN_FILENO,F_SETFL,flags|O_NONBLOCK);
     bool scene=false,shown=false;
     auto lastAim=Clock::now()-std::chrono::seconds(1);
+    auto lastUniverse=Clock::now();
+    uint64_t activeUniverse=universe;
     while(!stop) {
         read_commands();
+        if(Clock::now()-lastUniverse>std::chrono::seconds(1)) {
+            lastUniverse=Clock::now();
+            uint64_t now=vr::VRSystem()->GetUint64TrackedDeviceProperty(
+                vr::k_unTrackedDeviceIndex_Hmd,vr::Prop_CurrentUniverseId_Uint64,nullptr);
+            if(now!=activeUniverse) {
+                activeUniverse=now;
+                std::printf("universe %llu\n",static_cast<unsigned long long>(now));
+                std::fflush(stdout);
+                // Stop projecting stale geometry even before the Python session exits.
+                show_geometry(false);
+                overlay->HideOverlay(hud);
+                break;
+            }
+        }
         const bool isScene=vr::VRApplications()->GetCurrentSceneProcessId()!=0;
         if(isScene!=scene) {scene=isScene;layoutDirty=true;}
         if(scene) {
