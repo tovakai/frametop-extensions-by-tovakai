@@ -103,6 +103,71 @@ class RoomAPIAndEraseTest(unittest.TestCase):
         self.assertEqual(s.yaw, 5)
         self.assertEqual(s.editor.room.boxes[0].yaw_deg, 44)
 
+    def test_dpad_height_resizes_selected_couch_and_undoes(self):
+        session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
+        session.handle("ready 73")
+        session.handle("aim 0 2 0 0 -1 0")
+        session.handle("confirm")
+        self.assertEqual(session.selected_id, self.box.id)
+        original_bottom = self.box.top_y - self.box.h
+
+        session.handle("height_up")
+        box = session.editor.room.boxes[0]
+        self.assertAlmostEqual(box.h, 0.85)
+        self.assertAlmostEqual(box.top_y, 0.85)
+        self.assertAlmostEqual(box.top_y - box.h, original_bottom)
+        self.assertIn("H 0.85M", session.display())
+
+        session.handle("height_down")
+        self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.80)
+        session.handle("undo")
+        self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.85)
+        self.assertEqual(session.selected_id, self.box.id)
+
+        # Right Y still advances through the height presets.
+        session.handle("height")
+        self.assertAlmostEqual(session.editor.room.boxes[0].h, 1.10)
+        self.assertAlmostEqual(session.editor.room.boxes[0].top_y, 1.10)
+
+    def test_dpad_height_edits_next_box_when_no_selection(self):
+        session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
+        session.handle("ready 73")
+        session.handle("height_up")
+        self.assertAlmostEqual(session.height, 0.80)
+        self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.8)
+        session.handle("height_down")
+        self.assertAlmostEqual(session.height, 0.75)
+        session.handle("height")
+        self.assertAlmostEqual(session.height, 1.10)
+
+    def test_selected_height_respects_ceiling_and_minimum(self):
+        session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
+        session.handle("ready 73")
+        session.handle("aim 0 2 0 0 -1 0")
+        session.handle("confirm")
+        session.editor.dispatch({"action": "resize_box", "id": self.box.id, "height": 2.5})
+        history_length = len(session.editor.history)
+        with self.assertRaisesRegex(ValueError, "ceiling"):
+            session.handle("height_up")
+        self.assertAlmostEqual(session.editor.room.boxes[0].h, 2.5)
+        self.assertEqual(len(session.editor.history), history_length)
+        session.editor.dispatch({"action": "resize_box", "id": self.box.id, "height": 0.05})
+        with self.assertRaisesRegex(ValueError, "5 cm"):
+            session.handle("height_down")
+        self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.05)
+
+    def test_resize_keeps_nonzero_existing_bottom_height(self):
+        self.box.top_y = 1.0
+        session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
+        session.handle("ready 73")
+        session.handle("aim 0 2 0 0 -1 0")
+        session.handle("confirm")
+        session.handle("height_up")
+        box = session.editor.room.boxes[0]
+        self.assertAlmostEqual(box.h, 0.85)
+        self.assertAlmostEqual(box.top_y, 1.05)
+        self.assertAlmostEqual(box.top_y - box.h, 0.2)
+
     def test_erase_highlight(self):
         normal = segments_for_room(self.room)
         highlighted = segments_for_room(self.room, selection_id=self.box.id)
