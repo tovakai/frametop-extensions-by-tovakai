@@ -31,16 +31,18 @@ If you prefer another room, use --file /path/to/different-room.json. A saved roo
 | A (right) | Close the room (3+ corners). Afterward, aim at an existing furniture box's floor footprint and press A to select it for editing; press A over empty floor to deselect. With a pending furniture box, cancel its start |
 | Grip (right) | After closing the walls, toggle **Add furniture / Erase furniture** |
 | B (right) | Undo last geometry action |
-| Bumper (right) | Cycle furniture label: TABLE, COUCH, BED, STORAGE, SCREEN, LAMP, PLANT, OTHER |
+| Bumper (right) | Cycle furniture type on the selected box (undoable), or set the next box's type: TABLE, COUCH, BED, STORAGE, SCREEN, LAMP, PLANT, OTHER |
 | Y (right) | Cycle coarse height presets (0.45 / 0.75 / 1.1 / 1.8 / 2.3 m) for selected furniture or the next box |
 | Thumbstick click (right) | Rotate selected existing furniture **+5°**; otherwise rotate the next furniture box +5° |
 | D-pad left/right (left controller) | Rotate selected furniture **−1° / +1°**; otherwise adjust the next furniture box's angle |
-| D-pad up/down (left controller) | Adjust selected furniture height **+5 cm / −5 cm**, or set the next box's height in 5 cm increments |
+| D-pad up/down (left controller) | Adjust selected furniture height **+1 cm / −1 cm**, or set the next box's height in 1 cm increments |
 | X (right) | Save room and optionally stage a FramePort export |
 
 **To align an already placed couch:** look down and point the cross-marker at the couch's footprint. Press **right A** to select it (red wireframe). Press **left D-pad left/right** repeatedly to nudge the couch by 1° per press; press **right thumbstick click** for a faster +5° turn. The rotation changes the existing box around its center, not its size or location. Right B undoes a rotation. Aim at empty floor and press right A to deselect. Save with **right X**. This keeps each rotation as an undoable edit.
 
-**To dial in the couch's height:** while it's selected, tap **left D-pad up** to add 5 cm or **down** to subtract 5 cm. The box's bottom stays put while its top moves. Press **right Y** to jump between the coarse height presets instead. If nothing is selected, these buttons set the *next* furniture box's height. The room ceiling and minimum 5 cm height are enforced, and existing-box height changes can be undone with right B.
+**To change furniture type without redrawing it:** aim at the existing box, press right A to select it, then press the right bumper. The label cycles through furniture types without changing size or position, and right B undoes the change. If nothing is selected, the bumper changes the next box's type.
+
+**To dial in the couch's height:** while it's selected, tap **left D-pad up** to add 1 cm or **down** to subtract 1 cm. The box's bottom stays put while its top moves. Press **right Y** to jump between the coarse height presets instead. If nothing is selected, these buttons set the *next* furniture box's height. The room ceiling and minimum 5 cm height are enforced, and existing-box height changes can be undone with right B.
 
 Quit from the terminal with Ctrl+C. Uncommitted edits remain only in memory. The editor frontend automatically hides its overlays while an ordinary VR scene application is active.
 
