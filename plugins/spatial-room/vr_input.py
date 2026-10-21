@@ -34,6 +34,7 @@ BUTTON_ACTIONS = {
     ("left", "dpad_right"): "rotate_right",
     ("left", "dpad_up"): "height_up",
     ("left", "dpad_down"): "height_down",
+    ("left", "trigger"): "align",
 }
 
 
@@ -215,6 +216,8 @@ class ButtonMapper:
             self.down[key] = pressed
             if pressed and not previous:
                 result.append(action)
+            elif not pressed and previous and action == "place":
+                result.append("place_up")
         return result
 
 
