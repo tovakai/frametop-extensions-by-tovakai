@@ -126,6 +126,13 @@ void show_geometry(bool enabled) {
         return;
     }
     visible=true;
+    // Create world-space overlay handles on demand. Previously we only iterated
+    // the empty ribbons vector, so *none* of the geometry was ever visible.
+    const size_t wanted=std::min(segments.size(),size_t(kMaxSegments));
+    if(wanted>ribbons.size() && !make_ribbon(wanted-1)) {
+        std::fprintf(stderr,"ft-room-vr: failed creating a room edge overlay (%zu requested, %zu available)\n",
+                     wanted,ribbons.size());
+    }
     const Vec camera=head_position();
     for(size_t i=0;i<ribbons.size();++i) {
         const auto h=ribbons[i];
