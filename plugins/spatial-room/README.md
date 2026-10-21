@@ -37,6 +37,26 @@ If you prefer another room, use --file /path/to/different-room.json. A saved roo
 | D-pad left/right (left controller) | Rotate selected furniture **−1° / +1°**; otherwise adjust the next furniture box's angle |
 | D-pad up/down (left controller) | Adjust selected furniture height **+1 cm / −1 cm**, or set the next box's height in 1 cm increments |
 | X (right) | Save room and optionally stage a FramePort export |
+| Trigger (left) | Enter **Align Room** mode, or cancel its current preview |
+
+### Align the entire room in your headset (experimental)
+
+**Back up an important saved room first** (the new format is backward-compatible, but native on-device alignment still needs validation):
+
+```bash
+cp ~/Documents/room-test.json ~/Documents/room-test.pre-alignment.json
+```
+
+With the editor running and the room outline closed:
+
+1. Press **left trigger** to enter **Align Room**. A preview is now active; no saved geometry changes yet.
+2. Aim the **right controller** at the floor. **Hold its trigger** and move the cross-marker along the floor to slide the **entire** room and every furniture box. Release to stop dragging. The source wall points and furniture dimensions remain unchanged.
+3. Use **left D-pad left/right** for −1°/+1° room rotation about its original room center; **right thumbstick click** rotates +5°. In Align mode, **left D-pad up/down** nudges the whole room along standing Z by 1 cm (not furniture height).
+4. Press **right A** to **accept** the preview (undoable) or **right B** / **left trigger** to cancel all preview changes. Finally press **right X** to persist the corrected room and stage a newly aligned FramePort export.
+
+Aligned selections, hover/erase hit testing, outline previews, wall anchor APIs and FramePort exports all operate in the effective world coordinates, while the saved wall and furniture identities remain stable. We do **not** edit SteamVR's playspace/chaperone calibration or add any extra vertical shift: standing floor Y remains the runtime's floor reference.
+
+The native client checks OpenVR's raw-to-standing tracking-origin transform roughly once per second. An origin change or previously saved room without an accepted calibration is marked **ALIGNMENT UNVERIFIED** in the HUD. This is a signal to manually check or realign, **not** an automatic correction or proof of physical registration. Dashboard-only recentering normally doesn't affect standing geometry. Inside-out tracking drift might go undetected; the outlines are never a physical safety boundary.
 
 **To align an already placed couch:** look down and point the cross-marker at the couch's footprint. Press **right A** to select it (red wireframe). Press **left D-pad left/right** repeatedly to nudge the couch by 1° per press; press **right thumbstick click** for a faster +5° turn. The rotation changes the existing box around its center, not its size or location. Right B undoes a rotation. Aim at empty floor and press right A to deselect. Save with **right X**. This keeps each rotation as an undoable edit.
 
@@ -64,7 +84,7 @@ Remove the JSON when finished. No background service is installed. Running the e
 
 - [room_model.py](room_model.py): versioned JSON source of truth; metres, right-handed SteamVR STAGE, +Y up, -Z forward, semantic furniture, finite input and polygon validation.
 - [editor.py](editor.py): controller-ray to floor placement, undo, semantic boxes.
-- [session.py](session.py): read/edit/render/save boundary, universe guard and explicit staged FramePort export.
+- [session.py](session.py): read/edit/render/save boundary, origin/universe guard, undoable whole-room alignment preview and staged FramePort export.
 - [native/ft-room-vr.cpp](native/ft-room-vr.cpp): temporary OpenVR overlays, right-controller tip transform and opt-in global action events; otherwise it accepts actions only from its parent's private stdin pipe.
 - [vr_input.py](vr_input.py): default read-only SteamVR controller observer over vrserver's loopback websocket, based on Frametop's proven input/vrws.py technique.
 - [room.py](room.py): headless CLI and explicit FramePort export, useful for testing/offline tooling.
@@ -72,10 +92,10 @@ Remove the JSON when finished. No background service is installed. Running the e
 
 FramePort v1.3.0 accepts \`frameport-room 1\` files with \`source manual\`, a room outline, wall entities and furniture volumes, even with no scanned mesh. [Format contract](https://github.com/spoopyghosty0/frameport/blob/v1.3.0/docs/mr/ROOM_FORMAT.md). To import the exported file through FramePort, use FramePort's own supported interfaces and review the result on the headset; this extension does not auto-import anything.
 
-Tracking alignment is a serious limitation. Matching universe IDs only prevents some invalid restores: inside a single tracking universe, SteamVR may still shift/recenter. Reconfirm visible overlays against real walls before trusting coordinates.
+Tracking alignment remains a serious limitation. Matching universe IDs and a raw-to-standing origin signature detect many recalibrations but **cannot guarantee** physical registration. After recentering or tracking drift, manually compare the outline against your real walls before trusting its placement.
 
 ### Current limitations and next milestones
 
-This is a **native source prototype only**, with CI compile validation against the pinned SDK and automated Python tests. The GitHub runner is not a Steam Frame and cannot validate graphics, controller capture, passthrough or latency. There is no point/drag resize UI, saved wall editing, persistent tracking-marker alignment, shared **live subscription** API for downstream extensions, or direct FramePort sync yet. Performance with many world-space overlays is unknown, so the renderer caps at 240 segments.
+This remains an **experimental native OpenVR prototype**, with CI compile validation and automated Python tests. The GitHub runner is not a Steam Frame and cannot validate graphics, controller capture, passthrough or latency. There is no per-wall edit/resize tool, persistent external tracking-marker alignment, shared **live subscription** API for downstream extensions, or direct FramePort sync yet. A first whole-room alignment drag exists but still needs device validation. Performance with many world-space overlays is unknown, so the renderer caps at 240 segments.
 
-Next: real on-device input testing, a proper in-headset selection/edit palette, alignment reset, then a read-only spatial-room subscription API. Posters can already use the offline read-only wall anchors, but must confirm physical alignment.
+Next: on-device alignment and floor-recalibration tests, then a separate show/hide outline service and the Frametop toolbar toggle. Posters can already use the offline read-only wall anchors, but must confirm physical alignment.
