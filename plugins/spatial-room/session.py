@@ -7,6 +7,7 @@ overlays/controller input. Neither module edits Frametop/SteamVR configuration.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import os
@@ -19,7 +20,7 @@ import time
 from vr_input import watch
 
 from editor import Editor, box_between, floor_hit
-from room_model import Room, load, save, to_frameport
+from room_model import Alignment, Room, load, save, to_frameport
 
 LABELS = ("TABLE", "COUCH", "BED", "STORAGE", "SCREEN", "LAMP", "PLANT", "OTHER")
 HEIGHTS = (0.45, 0.75, 1.1, 1.8, 2.3)
@@ -148,7 +149,12 @@ class Session:
         self.height = 0.75
         self.yaw = 0.0
         self.selected_id: str | None = None
-        self.aim = None
+        self.aim = None  # current room-local pointer coordinate
+        self.aim_world = None  # standing-space pointer coordinate
+        self.align_preview: Alignment | None = None
+        self.align_drag = None  # pointer start and starting dx,dz
+        self.current_origin: tuple[float, ...] | None = None
+        self.origin_verified = False
         self.error = ""
         self.last_render = ""
         self.universe_known = False  # wait for the current headset universe on every launch
@@ -166,6 +172,16 @@ class Session:
             room.universe = universe
         self.universe_known = True
 
+    def _effective_room(self) -> Room:
+        if self.align_preview is None:
+            return self.editor.room
+        room = copy.copy(self.editor.room)
+        room.alignment = self.align_preview
+        return room
+
+    def _aligning(self) -> bool:
+        return self.align_preview is not None
+
     def handle(self, line: str) -> None:
         """Process one event from the native client, raising only for invalid commands."""
         parts = line.split()
@@ -179,20 +195,72 @@ class Session:
             return
         if not self.universe_known:
             raise ValueError("editing disabled until headset tracking universe is verified")
+        if cmd == "origin":
+            if len(parts) != 13:
+                raise ValueError("expected a 3x4 tracking origin matrix")
+            current = tuple(float(v) for v in parts[1:])
+            if any(not math.isfinite(v) or abs(v) > 10000 for v in current):
+                raise ValueError("invalid tracking origin pose")
+            if self.current_origin is not None and any(
+                abs(a-b) > 0.003 for a,b in zip(self.current_origin,current)
+            ):
+                # An origin change invalidates uncommitted alignment drags.
+                self.align_preview = None
+                self.align_drag = None
+                print("Spatial Room: standing origin changed; please realign before trusting outlines",
+                      file=sys.stderr)
+            self.current_origin = current
+            saved = self.editor.room.alignment.origin
+            self.origin_verified = saved is not None and all(
+                abs(a-b) <= 0.003 for a,b in zip(saved,current))
+            return
+        if cmd == "align":
+            if not self.editor.room.closed:
+                raise ValueError("close the room outline before alignment")
+            if self._aligning():
+                # Exiting without pressing A discards all preview changes.
+                self.align_preview = None
+                self.align_drag = None
+            else:
+                if self.editor.pending is not None:
+                    raise ValueError("finish the pending furniture box first")
+                self.align_preview = copy.deepcopy(self.editor.room.alignment)
+                self.align_drag = None
+                self.selected_id = None
+            return
+        if cmd == "place_up":
+            self.align_drag = None
+            return
         if cmd in ("aim", "place"):
             if len(parts) != 7:
                 raise ValueError("malformed controller ray")
             numbers = [float(v) for v in parts[1:]]
-            evt = {"origin": numbers[:3], "direction": numbers[3:]}
+            raw_ray = {"origin": numbers[:3], "direction": numbers[3:]}
             if cmd == "aim":
                 try:
-                    self.aim = floor_hit(**evt, floor_y=self.editor.room.floor_y)
+                    self.aim_world = floor_hit(**raw_ray, floor_y=self.editor.room.floor_y)
+                    if self._aligning() and self.align_drag is not None:
+                        start_x, start_z, dx, dz = self.align_drag
+                        self.align_preview.dx = max(-25.0, min(25.0, dx + self.aim_world[0]-start_x))
+                        self.align_preview.dz = max(-25.0, min(25.0, dz + self.aim_world[1]-start_z))
+                    self.aim = self._effective_room().to_local(self.aim_world)
                 except ValueError:
                     self.aim = None
+                    self.aim_world = None
                 return
+            world_hit = floor_hit(**raw_ray, floor_y=self.editor.room.floor_y)
+            self.aim_world = world_hit
+            if self._aligning():
+                self.align_drag = (world_hit[0],world_hit[1],
+                                   self.align_preview.dx,self.align_preview.dz)
+                return
+            local_hit = self.editor.room.to_local(world_hit)
+            # The headless editor accepts rays; feed it a safe synthetic
+            # downward ray representing the correctly inverse-transformed hit.
+            evt = {"origin": [local_hit[0],self.editor.room.floor_y+1,local_hit[1]],
+                   "direction":[0,-1,0]}
             if self.mode == "erase":
-                hit = floor_hit(**evt, floor_y=self.editor.room.floor_y)
-                ident = box_at_point(self.editor.room, hit)
+                ident = box_at_point(self.editor.room, local_hit)
                 if ident is None:
                     raise ValueError("point inside a furniture box to erase it")
                 self.editor.dispatch({"action": "delete_box", "id": ident})
@@ -208,6 +276,7 @@ class Session:
                 evt.update(label=self.label, height=self.height, yaw_deg=self.yaw)
             self.editor.dispatch(evt)
             self.aim = None
+            self.aim_world = None
         elif cmd == "mode":
             if self.editor.room.closed:
                 if self.editor.pending is not None:
@@ -217,6 +286,17 @@ class Session:
             else:
                 self.mode = "walls"
         elif cmd == "confirm":
+            if self._aligning():
+                candidate = self.align_preview
+                self.editor.dispatch({"action": "set_alignment", "dx": candidate.dx,
+                                      "dz":candidate.dz,"yaw_deg":candidate.yaw_deg,
+                                      "origin":self.current_origin})
+                self.origin_verified = self.current_origin is not None
+                self.align_preview = None
+                self.align_drag = None
+                self.aim = None
+                self.aim_world = None
+                return
             if not self.editor.room.closed:
                 self.editor.dispatch({"action": "close"})
                 self.mode = "box"
@@ -229,7 +309,14 @@ class Session:
                 hit = box_at_point(self.editor.room, self.aim) if self.aim is not None else None
                 self.selected_id = None if hit == self.selected_id else hit
         elif cmd == "undo":
+            if self._aligning():
+                self.align_preview = None
+                self.align_drag = None
+                return
             self.editor.dispatch({"action": "undo"})
+            saved = self.editor.room.alignment.origin
+            self.origin_verified = (self.current_origin is not None and saved is not None
+                                    and all(abs(a-b) <= 0.003 for a,b in zip(saved,self.current_origin)))
             if not any(b.id == self.selected_id for b in self.editor.room.boxes):
                 self.selected_id = None
         elif cmd == "label":
@@ -240,6 +327,15 @@ class Session:
             else:
                 self.label = LABELS[(LABELS.index(self.label)+1) % len(LABELS)]
         elif cmd in ("height", "height_up", "height_down"):
+            if self._aligning():
+                # In alignment mode the D-pad moves the *whole room* in Z, not
+                # furniture height. Floor Y is always SteamVR's standing floor.
+                if cmd == "height":
+                    return
+                direction = -1 if cmd == "height_up" else 1
+                self.align_preview.dz = max(-25.0, min(25.0,
+                    round(self.align_preview.dz + direction*0.01, 2)))
+                return
             # Right Y: advance to the next coarse preset. Left D-pad up/down:
             # nudge 1 cm. Selected furniture updates immediately; otherwise
             # the setting applies to the next placed box.
@@ -261,11 +357,16 @@ class Session:
         elif cmd in ("rotate", "rotate_left", "rotate_right"):
             # Thumbstick click: +5 degrees. Left D-pad: -1 / +1 degrees.
             delta = {"rotate": 5, "rotate_left": -1, "rotate_right": 1}[cmd]
+            if self._aligning():
+                self.align_preview.yaw_deg = (self.align_preview.yaw_deg + delta) % 360
+                return
             if self.selected_id is not None:
                 self.editor.dispatch({"action": "rotate_box", "id": self.selected_id, "delta_deg": delta})
             else:
                 self.yaw = (self.yaw + delta) % 360
         elif cmd == "save":
+            if self._aligning():
+                raise ValueError("press A to accept alignment or B to cancel before saving")
             save(self.path, self.editor.room)
             print(f"Saved room: {self.path}", file=sys.stderr)
             if self.export_dir is not None:
@@ -278,13 +379,21 @@ class Session:
             raise ValueError(f"unexpected native event: {cmd}")
 
     def display(self) -> str:
+        room = self._effective_room()
         header = hud(self.editor, self.mode, self.label, self.height, self.yaw, self.error,
                      selected_id=self.selected_id)
+        if self._aligning():
+            a = self.align_preview
+            header = f"ALIGN X {a.dx:+.2f} Z {a.dz:+.2f} YAW {a.yaw_deg:.0f} A OK B CANCEL"
+        elif self.current_origin is not None and not self.origin_verified:
+            header = "ALIGNMENT UNVERIFIED  L TRIGGER ALIGN  A CONFIRM"
         selection = self.selected_id
         if selection is None and self.aim is not None and self.mode == "erase":
             selection = box_at_point(self.editor.room, self.aim)
-        geom = segments_for_room(self.editor.room, pending=self.editor.pending if self.mode == "box" else None,
-                                 aiming=self.aim, height=self.height, yaw=self.yaw,
+        world = room.world_copy()
+        pending = room.to_world(self.editor.pending) if self.editor.pending is not None and self.mode=="box" else None
+        geom = segments_for_room(world, pending=pending, aiming=self.aim_world,
+                                 height=self.height, yaw=self.yaw+room.alignment.yaw_deg,
                                  selection_id=selection)
         return render_commands(geom, header)
 
