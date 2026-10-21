@@ -27,9 +27,9 @@ If you prefer another room, use --file /path/to/different-room.json. A saved roo
 
 | Right controller | Action |
 |---|---|
-| Trigger | Add wall corner; after walls close, first click starts furniture box, second ends it |
+| Trigger | Add wall corner; after walls close, first click starts furniture box, second ends it; in Erase mode, select a box footprint to delete |
 | A | Close polygon (3+ valid corners); with a pending furniture box, cancel its start |
-| Grip | Toggle editor mode (currently editing completed walls is not implemented) |
+| Grip | After closing the walls, toggle **Add furniture / Erase furniture** |
 | B | Undo last geometry action |
 | Bumper | Cycle furniture label: TABLE, COUCH, BED, STORAGE, SCREEN, LAMP, PLANT, OTHER |
 | Y | Cycle furniture height: 0.45 / 0.75 / 1.1 / 1.8 / 2.3 m |
@@ -55,6 +55,7 @@ Remove the JSON when finished. No background service is installed. Running the e
 - [session.py](session.py): read/edit/render/save boundary, universe guard and explicit staged FramePort export.
 - [native/ft-room-vr.cpp](native/ft-room-vr.cpp): temporary OpenVR overlays, right-controller tip transform and action events; no direct filesystem writes.
 - [room.py](room.py): headless CLI and explicit FramePort export, useful for testing/offline tooling.
+- [room_api.py](room_api.py): read-only room snapshots, wall normals and poster-friendly wall anchors for dependent extensions; requires a matching SteamVR universe.
 
 FramePort v1.3.0 accepts \`frameport-room 1\` files with \`source manual\`, a room outline, wall entities and furniture volumes, even with no scanned mesh. [Format contract](https://github.com/spoopyghosty0/frameport/blob/v1.3.0/docs/mr/ROOM_FORMAT.md). To import the exported file through FramePort, use FramePort's own supported interfaces and review the result on the headset; this extension does not auto-import anything.
 
@@ -62,6 +63,6 @@ Tracking alignment is a serious limitation. Matching universe IDs only prevents 
 
 ### Current limitations and next milestones
 
-This is a **native source prototype only**, with CI compile validation against the pinned SDK and automated Python tests. The GitHub runner is not a Steam Frame and cannot validate graphics, controller capture, passthrough or latency. There is no point/drag resize UI, saved wall editing, persistent tracking-marker alignment, shared live geometry API for downstream extensions, or direct FramePort sync yet. Performance with many world-space overlays is unknown, so the renderer caps at 240 segments.
+This is a **native source prototype only**, with CI compile validation against the pinned SDK and automated Python tests. The GitHub runner is not a Steam Frame and cannot validate graphics, controller capture, passthrough or latency. There is no point/drag resize UI, saved wall editing, persistent tracking-marker alignment, shared **live subscription** API for downstream extensions, or direct FramePort sync yet. Performance with many world-space overlays is unknown, so the renderer caps at 240 segments.
 
-Next: real on-device input testing, a proper in-headset selection/edit palette, alignment reset, then a read-only spatial-room subscription API so Posters and other Frametop extensions can consume room coordinates safely.
+Next: real on-device input testing, a proper in-headset selection/edit palette, alignment reset, then a read-only spatial-room subscription API. Posters can already use the offline read-only wall anchors, but must confirm physical alignment.
