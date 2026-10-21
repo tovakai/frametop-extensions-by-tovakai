@@ -272,7 +272,7 @@ def run(native: Path, actions: Path, session: Session, *,
         if input_mode == "readonly":
             watcher = threading.Thread(
                 target=watch,
-                args=(stop_input, lambda action: send_native(f"input {action}\\n"),
+                args=(stop_input, lambda action: send_native(f"input {action}\n"),
                       lambda message: print("Spatial Room input:", message, file=sys.stderr)),
                 kwargs={"debug": input_debug}, name="spatial-room-input", daemon=True)
             watcher.start()
