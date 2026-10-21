@@ -1,39 +1,67 @@
-# Spatial Room v0.1.0 (prototype)
+# Spatial Room v0.2.0 (experimental VR frontend)
 
-An independent, opt-in foundation for Quest 2-style **manual** room creation in Frametop. This commit implements the **room model and editor state machine**, **not** an in-headset UI. It neither scans the room nor alters Frametop, SteamVR, FramePort, or headset settings.
+An **optional** Frametop extension for manually blocking out a room inside Steam Frame passthrough. No automatic scanning. No changes to the compositor, SteamVR files or running desktop. This branch is **not device-tested**.
 
-## Intended headset workflow
+This is a first OpenVR overlay prototype, not yet a polished Quest room editor. The editor displays floor/ceiling/wall wireframes, furniture cubes, a controller-aim cross and an HMD-relative help panel. You point the **right controller at the floor** and pull trigger to put down corners. It reads controller actions via SteamVR, and stage-space geometry is saved by the Python backend.
 
-1. In passthrough, point at each floor corner and click; close the polygon.
-2. Drag opposite corners to place furniture volumes; adjust height and rotation, then label them TABLE, COUCH, BED, STORAGE, SCREEN, LAMP, PLANT or OTHER.
-3. Save the room in SteamVR Standing coordinates, check tracking alignment, optionally export it to FramePort.
-4. Later Frametop extensions, including posters and spatial widgets, consume the same room data.
+## Build on Steam Frame (opt-in)
 
-**Missing:** OpenVR overlay, controller input hooks, wireframe renderer, in-headset UI, tracking-universe lookup and recalibration, direct FramePort installation and device testing. Do not present this prototype as a usable in-headset editor.
+Prerequisites: Frametop checkout at ~/frametop, its existing dev distrobox, and a cloned extensions checkout at ~/frametop-extensions. This is a **separate build** and makes no system changes.
 
-Frametop extension API v1 currently provides screen controls, not arbitrary 3D geometry or tracked controller input. The planned VR frontend needs its own OpenVR overlay/input process; this plugin supplies its data model and ray-input state machine.
+    cd ~/frametop-extensions
+    git fetch origin feat/spatial-room-manual-layout
+    git switch feat/spatial-room-manual-layout
+    bash plugins/spatial-room/native/build.sh
 
-## Coordinates and compatibility
+The build uses Frametop's pinned OpenVR SDK 2.15.6 and SteamVR's libopenvr_api on the headset. If your checkout is somewhere else, set FRAMETOP_ROOT to its path. Compilation happens in the existing "dev" distrobox. Test/build has no automatic install step.
 
-Right-handed SteamVR Standing/STAGE space, metres, +Y up and -Z forward. JSON is the extension's editable source of truth. Explicit export generates FramePort's frameport-room 1 text with source manual, floor, ceiling, polygon walls and semantic furniture volumes, **without a scanned mesh**. The generated anchor UUIDs remain stable for unchanged objects.
+Start in Frametop Desktop mode, ideally with passthrough visible:
 
-The room belongs to a SteamVR tracking universe and might drift/misalign after recentering or relocalization. Until live alignment checking exists, do **not** auto-load a saved room into other apps or assume persistent physical registration. Universe 0 explicitly means unknown, not a working anchor. Test alignment inside the headset before using room geometry.
+    python3 plugins/spatial-room/session.py --export-frameport ~/Documents/Spatial-Room-Exports
 
-## Offline CLI (Python 3.10+; standard library only)
+The CLI starts a temporary OpenVR overlay process. **It does not restart SteamVR or enable controller-global input.** Its first run creates an in-memory unsaved draft. The X button saves your JSON room under ~/.config/frametop-extensions/spatial-room/room.json. If you provided --export-frameport, it also exports a timestamped, FramePort-compatible room.txt into that folder after the outline is closed. This is **staging**, not automatic import.
 
-Run from the extensions checkout:
+If you prefer another room, use --file /path/to/different-room.json. A saved room with a different SteamVR universe ID is refused rather than applied at the wrong physical coordinates. If SteamVR returns universe ID 0, placement is blocked until tracking is identifiable.
 
-    python3 plugins/spatial-room/room.py new /tmp/living-room.json --name "Living Room" --universe 0
-    python3 plugins/spatial-room/room.py check /tmp/living-room.json
-    python3 plugins/spatial-room/room.py edit /tmp/living-room.json
-    python3 plugins/spatial-room/room.py export /tmp/living-room.json /tmp/room.txt
+### Prototype controller map
 
-The **edit** command reads one JSON object per line from stdin. Events are status, corner, close, box_start, box_finish, set_ceiling, delete_box, undo, and save. Corner and box events accept the tracked ray as origin: [x,y,z] and unit direction: [dx,dy,dz]. For box_finish, provide optional label, height (metres) and yaw_deg. set_ceiling takes height above the floor. Responses are JSON objects reporting success or error. No edit is written until the explicit save event.
+| Right controller | Action |
+|---|---|
+| Trigger | Add wall corner; after walls close, first click starts furniture box, second ends it |
+| A | Close polygon (3+ valid corners); with a pending furniture box, cancel its start |
+| Grip | Toggle editor mode (currently editing completed walls is not implemented) |
+| B | Undo last geometry action |
+| Bumper | Cycle furniture label: TABLE, COUCH, BED, STORAGE, SCREEN, LAMP, PLANT, OTHER |
+| Y | Cycle furniture height: 0.45 / 0.75 / 1.1 / 1.8 / 2.3 m |
+| Thumbstick click | Rotate next furniture box 15 degrees |
+| X | Save room and optionally stage a FramePort export |
 
-Export refuses to overwrite an existing file or publish an unfinished room, and does **not** touch FramePort's installed rooms. Check against [FramePort v1.3.0's room format](https://github.com/spoopyghosty0/frameport/blob/v1.3.0/docs/mr/ROOM_FORMAT.md).
+Quit from the terminal with Ctrl+C. Uncommitted edits remain only in memory. The editor frontend automatically hides its overlays while an ordinary VR scene application is active.
 
-Offline tests: python3 -m unittest discover -s tests -v.
+**Important SteamVR limitation:** The Frame controllers don't expose normal evdev buttons. The standalone OpenVR client uses a hidden action set at overlay-global priority. SteamVR's **Enable global input from overlays (Experimental)** must be on for the mappings to work. Frametop's own controller mappings may compete for buttons. This prototype deliberately does **not** toggle that preference or force controller bindings. If the overlay is visible but buttons don't work, inspect terminal stderr and SteamVR bindings.
 
-## Next slice
+### How to test without risking existing rooms
 
-Build a native overlay/input adapter that sends real controller rays and trigger events to this editor. Render in-room wireframes and an edit-mode panel over passthrough without modifying the Frametop compositor. It must identify the actual tracking universe, explicitly handle recentering, avoid intercepting unrelated SteamVR input, and never restart Steam/SteamVR on installation. Only mark the feature live-tested after headset tests pass.
+Use a temporary draft:
+
+    python3 plugins/spatial-room/session.py --file /tmp/frametop-room-test.json
+
+Remove the JSON when finished. No background service is installed. Running the editor is voluntary. Until live testing confirms controller bindings and geometry alignment, use the editor for experiments, not as a protective guardian or obstacle detector. The wireframes are **not physical collision geometry** and cannot prevent you from walking into furniture.
+
+## Internals and compatibility
+
+- [room_model.py](room_model.py): versioned JSON source of truth; metres, right-handed SteamVR STAGE, +Y up, -Z forward, semantic furniture, finite input and polygon validation.
+- [editor.py](editor.py): controller-ray to floor placement, undo, semantic boxes.
+- [session.py](session.py): read/edit/render/save boundary, universe guard and explicit staged FramePort export.
+- [native/ft-room-vr.cpp](native/ft-room-vr.cpp): temporary OpenVR overlays, right-controller tip transform and action events; no direct filesystem writes.
+- [room.py](room.py): headless CLI and explicit FramePort export, useful for testing/offline tooling.
+
+FramePort v1.3.0 accepts \`frameport-room 1\` files with \`source manual\`, a room outline, wall entities and furniture volumes, even with no scanned mesh. [Format contract](https://github.com/spoopyghosty0/frameport/blob/v1.3.0/docs/mr/ROOM_FORMAT.md). To import the exported file through FramePort, use FramePort's own supported interfaces and review the result on the headset; this extension does not auto-import anything.
+
+Tracking alignment is a serious limitation. Matching universe IDs only prevents some invalid restores: inside a single tracking universe, SteamVR may still shift/recenter. Reconfirm visible overlays against real walls before trusting coordinates.
+
+### Current limitations and next milestones
+
+This is a **native source prototype only**, with CI compile validation against the pinned SDK and automated Python tests. The GitHub runner is not a Steam Frame and cannot validate graphics, controller capture, passthrough or latency. There is no point/drag resize UI, saved wall editing, persistent tracking-marker alignment, shared live geometry API for downstream extensions, or direct FramePort sync yet. Performance with many world-space overlays is unknown, so the renderer caps at 240 segments.
+
+Next: real on-device input testing, a proper in-headset selection/edit palette, alignment reset, then a read-only spatial-room subscription API so Posters and other Frametop extensions can consume room coordinates safely.
