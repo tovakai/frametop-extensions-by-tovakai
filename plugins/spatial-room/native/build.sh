@@ -29,7 +29,7 @@ mkdir -p build/include
 # Cache it per extension, so it works regardless of where Frametop was cloned.
 header=build/include/openvr.h
 expected=1e6ed57199896cc1f7c5484e50fa18955e97be15be690beb28d998c877ead7fd
-if ! printf "%s  %s\n" "$expected" "$header" | sha256sum -c --status; then
+if [[ ! -f "$header" ]] || ! printf "%s  %s\n" "$expected" "$header" | sha256sum -c --status; then
     part=$(mktemp "$header.XXXXXXXX")
     trap 'rm -f -- "$part"' EXIT
     curl -fsSL --retry 2 "https://raw.githubusercontent.com/ValveSoftware/openvr/v2.15.6/headers/openvr.h" -o "$part"
@@ -49,7 +49,7 @@ if [[ ! -f "$libdir/libopenvr_api.so" ]]; then
     exit 1
 fi
 
-g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Wno-unused-parameter \
+g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror=unused-function -Wno-unused-parameter \
     -Ibuild/include ft-room-vr.cpp -L"$libdir" -lopenvr_api \
     "-Wl,-rpath,$libdir" -o build/ft-room-vr
 echo "Built $root/build/ft-room-vr"
