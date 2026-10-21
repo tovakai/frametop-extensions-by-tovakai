@@ -278,6 +278,8 @@ class Session:
             self.aim = None
             self.aim_world = None
         elif cmd == "mode":
+            if self._aligning():
+                return
             if self.editor.room.closed:
                 if self.editor.pending is not None:
                     raise ValueError("finish or cancel the current box before switching tools")
@@ -320,6 +322,8 @@ class Session:
             if not any(b.id == self.selected_id for b in self.editor.room.boxes):
                 self.selected_id = None
         elif cmd == "label":
+            if self._aligning():
+                return
             box = next((b for b in self.editor.room.boxes if b.id == self.selected_id), None)
             if box is not None:
                 label = LABELS[(LABELS.index(box.label)+1) % len(LABELS)]
@@ -370,7 +374,10 @@ class Session:
             save(self.path, self.editor.room)
             print(f"Saved room: {self.path}", file=sys.stderr)
             if self.export_dir is not None:
-                if self.editor.room.closed:
+                if self.current_origin is not None and not self.origin_verified:
+                    print("Alignment unverified: JSON saved; FramePort export skipped until "
+                          "Align Room is confirmed with right A", file=sys.stderr)
+                elif self.editor.room.closed:
                     file = frameport_snapshot(self.export_dir, self.editor.room)
                     print(f"FramePort export staged: {file}", file=sys.stderr)
                 else:
