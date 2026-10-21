@@ -13,7 +13,10 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import time
+
+from vr_input import watch
 
 from editor import Editor, box_between, floor_hit
 from room_model import Room, load, save, to_frameport
@@ -240,16 +243,39 @@ class Session:
         return render_commands(geom, header)
 
 
-def run(native: Path, actions: Path, session: Session) -> int:
+def run(native: Path, actions: Path, session: Session, *,
+        input_mode: str = "readonly", input_debug: bool = False) -> int:
     if not native.is_file():
         raise RuntimeError(f"native frontend missing: {native}; build it first")
     if not actions.is_file():
         raise RuntimeError(f"SteamVR action manifest missing: {actions}")
     native, actions = native.resolve(), actions.resolve()
-    with subprocess.Popen([str(native), str(actions)],
-                          stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    command = [str(native), "--read-only-input" if input_mode == "readonly" else str(actions)]
+    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           text=True, bufsize=1) as process:
         hard_failure = False
+        writer_lock = threading.Lock()
+        stop_input = threading.Event()
+        watcher = None
+
+        def send_native(payload: str) -> bool:
+            with writer_lock:
+                if process.poll() is not None or not process.stdin:
+                    return False
+                try:
+                    process.stdin.write(payload)
+                    process.stdin.flush()
+                    return True
+                except (BrokenPipeError, OSError, ValueError):
+                    return False
+
+        if input_mode == "readonly":
+            watcher = threading.Thread(
+                target=watch,
+                args=(stop_input, lambda action: send_native(f"input {action}\\n"),
+                      lambda message: print("Spatial Room input:", message, file=sys.stderr)),
+                kwargs={"debug": input_debug}, name="spatial-room-input", daemon=True)
+            watcher.start()
         try:
             for line in process.stdout:
                 try:
@@ -263,23 +289,16 @@ def run(native: Path, actions: Path, session: Session) -> int:
                         hard_failure = True
                         break
                 frame = session.display()
-                if frame != session.last_render and process.stdin:
-                    try:
-                        process.stdin.write(frame)
-                        process.stdin.flush()
-                        session.last_render = frame
-                    except BrokenPipeError:
+                if frame != session.last_render:
+                    if not send_native(frame):
                         break
+                    session.last_render = frame
         except KeyboardInterrupt:
             print("\nSpatial Room interrupted; unsaved edits are not written.", file=sys.stderr)
         finally:
+            stop_input.set()
             if process.poll() is None:
-                try:
-                    if process.stdin:
-                        process.stdin.write("quit\n")
-                        process.stdin.flush()
-                except (BrokenPipeError, OSError):
-                    pass
+                send_native("quit\n")
                 try:
                     process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
@@ -289,6 +308,8 @@ def run(native: Path, actions: Path, session: Session) -> int:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait()
+            if watcher is not None:
+                watcher.join(timeout=1.0)
     return 1 if hard_failure or process.returncode not in (0, None) else 0
 
 
@@ -299,11 +320,16 @@ def main(argv=None) -> int:
     parser.add_argument("--native", type=Path, default=ROOT/"native/build/ft-room-vr")
     parser.add_argument("--export-frameport", type=Path,
                         help="stage room.txt snapshots here on Save; NEVER installs them to FramePort")
+    parser.add_argument("--input-mode", choices=("readonly", "global"), default="readonly",
+                        help="controller source; readonly (default) requires no SteamVR global bindings")
+    parser.add_argument("--input-debug", action="store_true",
+                        help="print decoded controller presses to stderr for testing")
     args = parser.parse_args(argv)
     try:
         room = load(args.file) if args.file.exists() else Room(name=args.name, universe=0)
         session = Session(Editor(room), path=args.file, export_dir=args.export_frameport)
-        return run(args.native, ROOT/"native/actions/room_actions.json", session)
+        return run(args.native, ROOT/"native/actions/room_actions.json", session,
+                   input_mode=args.input_mode, input_debug=args.input_debug)
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"Spatial Room: {exc}", file=sys.stderr)
         return 1
