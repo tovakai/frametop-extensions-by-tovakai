@@ -51,6 +51,14 @@
     {
       "name": "/actions/room/in/rotate_right",
       "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/height_up",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/height_down",
+      "type": "boolean"
     }
   ],
   "localization": [
@@ -66,7 +74,9 @@
       "/actions/room/in/rotate": "rotate",
       "/actions/room/in/save": "save",
       "/actions/room/in/rotate_left": "rotate_left",
-      "/actions/room/in/rotate_right": "rotate_right"
+      "/actions/room/in/rotate_right": "rotate_right",
+      "/actions/room/in/height_up": "height_up",
+      "/actions/room/in/height_down": "height_down"
     }
   ]
 }
