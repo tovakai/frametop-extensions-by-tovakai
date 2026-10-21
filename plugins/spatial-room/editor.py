@@ -120,10 +120,16 @@ class Editor:
                 raise ValueError("room translation exceeds 25 metres")
             if abs(yaw) > 36000:
                 raise ValueError("room rotation is outside allowed range")
+            origin = event.get("origin")
+            if origin is not None:
+                if not isinstance(origin, (list, tuple)) or len(origin) != 12:
+                    raise ValueError("alignment origin must be a 3x4 matrix")
+                origin = tuple(finite(v, "tracking origin") for v in origin)
             self._checkpoint()
             self.room.alignment.dx = dx
             self.room.alignment.dz = dz
             self.room.alignment.yaw_deg = yaw % 360
+            self.room.alignment.origin = origin
         elif action == "set_box_label":
             ident = event.get("id")
             label = event.get("label")
