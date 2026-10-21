@@ -61,7 +61,7 @@ class RoomAPIAndEraseTest(unittest.TestCase):
         s.handle("confirm")
         self.assertEqual(s.selected_id, self.box.id)
         self.assertIn("EDIT COUCH", s.display())
-        self.assertIn("UP/DN 5CM", s.display())
+        self.assertIn("UP/DN 1CM", s.display())
         self.assertEqual(sum(p == 3 for _, _, p in
                              segments_for_room(s.editor.room, selection_id=s.selected_id)), 12)
         # Right thumbstick click rotates +5 degrees; left D-pad adjusts by 1.
@@ -113,15 +113,15 @@ class RoomAPIAndEraseTest(unittest.TestCase):
 
         session.handle("height_up")
         box = session.editor.room.boxes[0]
-        self.assertAlmostEqual(box.h, 0.85)
-        self.assertAlmostEqual(box.top_y, 0.85)
+        self.assertAlmostEqual(box.h, 0.81)
+        self.assertAlmostEqual(box.top_y, 0.81)
         self.assertAlmostEqual(box.top_y - box.h, original_bottom)
-        self.assertIn("H 0.85M", session.display())
+        self.assertIn("H 0.81M", session.display())
 
         session.handle("height_down")
         self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.80)
         session.handle("undo")
-        self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.85)
+        self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.81)
         self.assertEqual(session.selected_id, self.box.id)
 
         # Right Y still advances through the height presets.
@@ -133,12 +133,37 @@ class RoomAPIAndEraseTest(unittest.TestCase):
         session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
         session.handle("ready 73")
         session.handle("height_up")
-        self.assertAlmostEqual(session.height, 0.80)
+        self.assertAlmostEqual(session.height, 0.76)
         self.assertAlmostEqual(session.editor.room.boxes[0].h, 0.8)
         session.handle("height_down")
         self.assertAlmostEqual(session.height, 0.75)
         session.handle("height")
         self.assertAlmostEqual(session.height, 1.10)
+
+    def test_selected_furniture_label_change_preserves_geometry_and_undo(self):
+        session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
+        session.handle("ready 73")
+        session.handle("aim 0 2 0 0 -1 0")
+        session.handle("confirm")
+        selected_id = session.selected_id
+        geometry = (self.box.cx, self.box.cz, self.box.w, self.box.d, self.box.h, self.box.yaw_deg)
+        session.handle("label")
+        box = session.editor.room.boxes[0]
+        self.assertEqual(box.id, selected_id)
+        self.assertEqual(box.label, "BED")
+        self.assertEqual((box.cx, box.cz, box.w, box.d, box.h, box.yaw_deg), geometry)
+        self.assertIn("EDIT BED", session.display())
+        self.assertEqual(session.label, "TABLE")  # new-object preset unchanged
+        session.handle("undo")
+        self.assertEqual(session.editor.room.boxes[0].label, "COUCH")
+        self.assertEqual(session.selected_id, selected_id)
+
+    def test_unselected_label_changes_next_object_preset_only(self):
+        session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
+        session.handle("ready 73")
+        session.handle("label")
+        self.assertEqual(session.label, "COUCH")
+        self.assertEqual(session.editor.room.boxes[0].label, "COUCH")
 
     def test_selected_height_respects_ceiling_and_minimum(self):
         session = Session(Editor(self.room), path=Path("/unused"), export_dir=None)
@@ -164,8 +189,8 @@ class RoomAPIAndEraseTest(unittest.TestCase):
         session.handle("confirm")
         session.handle("height_up")
         box = session.editor.room.boxes[0]
-        self.assertAlmostEqual(box.h, 0.85)
-        self.assertAlmostEqual(box.top_y, 1.05)
+        self.assertAlmostEqual(box.h, 0.81)
+        self.assertAlmostEqual(box.top_y, 1.01)
         self.assertAlmostEqual(box.top_y - box.h, 0.2)
 
     def test_erase_highlight(self):
