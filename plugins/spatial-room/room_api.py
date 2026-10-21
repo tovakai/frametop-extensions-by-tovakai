@@ -29,7 +29,10 @@ def snapshot(path: Path = DEFAULT_ROOM, *, universe: int) -> dict:
         raise ValueError(f"tracking universe mismatch: saved={room.universe}, active={universe}")
     if not room.closed:
         raise ValueError("room outline is unfinished")
-    data = room.to_dict()
+    data = room.world_copy().to_dict()
+    # Consumers receive effective STANDING-space geometry and stable wall IDs.
+    data["local_alignment"] = room.alignment.to_dict()
+    data["space"] = "steamvr-standing"
     data["walls"] = walls(room)
     data["alignment_verified"] = False
     return data
@@ -45,12 +48,15 @@ def walls(room: Room) -> list[dict]:
         corners.reverse()
     result = []
     for index, (a, b) in enumerate(zip(corners, corners[1:] + corners[:1])):
+        # Generate IDs from the immutable room-local edge even when realigning.
+        edge_id = _uuid_for(room.id, _edge_key(a, b))
+        a, b = room.to_world(a), room.to_world(b)
         dx, dz = b[0]-a[0], b[1]-a[1]
         width = math.hypot(dx, dz)
         # Contract: FramePort's positive outline ordering uses inward (-dz,dx).
         normal = (-dz/width, 0.0, dx/width)
         result.append({
-            "id": _uuid_for(room.id, _edge_key(a, b)),
+            "id": edge_id,
             "index": index, "start": [a[0], room.floor_y, a[1]],
             "end": [b[0], room.floor_y, b[1]],
             "normal": list(normal),
