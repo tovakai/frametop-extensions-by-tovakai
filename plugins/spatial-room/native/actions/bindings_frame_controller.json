@@ -95,6 +95,24 @@
               "output": "/actions/room/in/rotate_right"
             }
           }
+        },
+        {
+          "path": "/user/hand/left/input/dpad_up",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/room/in/height_up"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/dpad_down",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/room/in/height_down"
+            }
+          }
         }
       ]
     }
