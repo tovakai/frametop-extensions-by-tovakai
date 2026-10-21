@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "id": "tovakai.spatial-room",
+  "name": "Spatial Room",
+  "version": "0.1.0",
+  "description": "Prototype room geometry, ray-driven placement state machine and FramePort export; no VR UI yet",
+  "status": "prototype",
+  "min_extension_api": 1,
+  "required_capabilities": [],
+  "optional_capabilities": [],
+  "entrypoint": "room.py",
+  "dependencies": []
+}
