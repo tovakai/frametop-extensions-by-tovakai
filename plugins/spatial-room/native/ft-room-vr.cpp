@@ -302,6 +302,7 @@ bool parse_segment(const char* str,Segment &seg) {
     return true;
 }
 bool reading=true,layoutDirty=false;
+bool readOnlyInput=false;
 std::string incoming;
 void command(std::string line) {
     if(line=="clear") pending.clear();
@@ -314,6 +315,19 @@ void command(std::string line) {
     } else if(line.rfind("hud ",0)==0) {
         const std::string value=line.substr(4,56);
         if(value!=hudText){hudText=value;hudDirty=true;}
+    } else if(line.rfind("input ",0)==0 && readOnlyInput) {
+        // Input events arrive only through our own stdin pipe. The read-only
+        // vrserver watcher owns no SteamVR action bindings. Do not edit in games.
+        if(vr::VRApplications()->GetCurrentSceneProcessId()!=0) return;
+        const std::string action=line.substr(6);
+        if(action=="place") {
+            Ray ray=controller_ray();
+            if(ray.valid) std::printf("place %.6f %.6f %.6f %.6f %.6f %.6f\n",
+                    ray.o[0],ray.o[1],ray.o[2],ray.dir[0],ray.dir[1],ray.dir[2]);
+        } else if(std::find(actions.begin(),actions.end(),action)!=actions.end()) {
+            std::printf("%s\n",action.c_str());
+        }
+        std::fflush(stdout);
     } else if(line=="quit")stop=true;
 }
 void read_commands() {
@@ -334,7 +348,8 @@ void read_commands() {
 } // namespace
 
 int main(int argc,char**argv) {
-    if(argc!=2) {std::fprintf(stderr,"usage: ft-room-vr /absolute/path/to/room_actions.json\n");return 2;}
+    if(argc!=2) {std::fprintf(stderr,"usage: ft-room-vr --read-only-input | /absolute/path/to/room_actions.json\n");return 2;}
+    readOnlyInput=std::strcmp(argv[1],"--read-only-input")==0;
     std::signal(SIGINT,Signal);std::signal(SIGTERM,Signal);
     vr::EVRInitError error=vr::VRInitError_None;
     vr::VR_Init(&error,vr::VRApplication_Overlay);
@@ -342,12 +357,16 @@ int main(int argc,char**argv) {
     overlay=vr::VROverlay();
     if(!overlay||!initialize_hud()){std::fprintf(stderr,"ft-room-vr: failed creating overlay\n");vr::VR_Shutdown();return 1;}
     Buttons buttons;
-    if(!buttons.init(argv[1])) {
-        std::fprintf(stderr,"ft-room-vr: action manifest unavailable; no controller input\n");
-        hudText="INPUT UNAVAILABLE";hudDirty=true;draw_hud();
+    if(!readOnlyInput) {
+        if(!buttons.init(argv[1])) {
+            std::fprintf(stderr,"ft-room-vr: action manifest unavailable; no controller input\n");
+            hudText="INPUT UNAVAILABLE";hudDirty=true;draw_hud();
+        }
+        if(!vr::VRSettings()->GetBool("steamvr","globalActionSetPriority",nullptr))
+            std::fprintf(stderr,"ft-room-vr: SteamVR overlay-global input not enabled; buttons may not work\n");
+    } else {
+        std::fprintf(stderr,"ft-room-vr: read-only controller event mode; no SteamVR action manifest active\n");
     }
-    if(!vr::VRSettings()->GetBool("steamvr","globalActionSetPriority",nullptr))
-        std::fprintf(stderr,"ft-room-vr: SteamVR overlay-global input not enabled; buttons may not work\n");
     const auto universe=vr::VRSystem()->GetUint64TrackedDeviceProperty(
         vr::k_unTrackedDeviceIndex_Hmd,vr::Prop_CurrentUniverseId_Uint64,nullptr);
     std::printf("ready %llu\n",static_cast<unsigned long long>(universe));std::fflush(stdout);
@@ -381,7 +400,7 @@ int main(int argc,char**argv) {
             if(!shown){overlay->ShowOverlay(hud);layoutDirty=true;shown=true;}
             if(layoutDirty){show_geometry(true);layoutDirty=false;}
             draw_hud();
-            buttons.poll(false);
+            if(!readOnlyInput) buttons.poll(false);
             if(Clock::now()-lastAim>std::chrono::milliseconds(120)) {
                 lastAim=Clock::now();
                 const Ray r=controller_ray();
