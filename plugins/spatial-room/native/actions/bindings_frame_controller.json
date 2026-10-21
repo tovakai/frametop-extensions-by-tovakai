@@ -113,6 +113,15 @@
               "output": "/actions/room/in/height_down"
             }
           }
+        },
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "trigger",
+          "inputs": {
+            "click": {
+              "output": "/actions/room/in/align"
+            }
+          }
         }
       ]
     }
