@@ -112,6 +112,22 @@ class Editor:
                 raise ValueError("ceiling would cut through furniture")
             self._checkpoint()
             self.room.ceiling_y = ceiling_y
+        elif action == "resize_box":
+            ident = event.get("id")
+            height = finite(event.get("height"), "furniture height")
+            if not 0.05 <= height <= 10:
+                raise ValueError("furniture height must be 5 cm..10 m")
+            box = next((b for b in self.room.boxes if b.id == ident), None)
+            if box is None:
+                raise ValueError("box ID not found")
+            # Keep the furniture's bottom fixed while resizing upwards.
+            bottom_y = box.top_y - box.h
+            if bottom_y + height > self.room.ceiling_y + 1e-9:
+                raise ValueError("furniture height exceeds room ceiling")
+            if abs(height - box.h) >= 1e-8:
+                self._checkpoint()
+                box.top_y = bottom_y + height
+                box.h = height
         elif action == "rotate_box":
             ident = event.get("id")
             delta = finite(event.get("delta_deg"), "rotation delta")
