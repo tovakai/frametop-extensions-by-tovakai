@@ -209,7 +209,7 @@ void draw_hud() {
     const std::array<std::string,4> lines={
         "SPATIAL ROOM",hudText.substr(0,56),
         "R TRIG PLACE  R A CLOSE/SELECT  R GRIP MODE",
-        "R X SAVE  R Y HEIGHT  DPAD L-1 R+1  STICK +5"
+        "R X SAVE Y PRESET  DPAD U/D 5CM L/R 1DEG"
     };
     for(size_t ln=0;ln<lines.size();++ln) {
         int x=15,y=9+int(ln)*34;
@@ -242,12 +242,12 @@ bool initialize_hud() {
     return true;
 }
 
-const std::array<const char*,10> actions={"place","mode","confirm","undo","label","height","rotate","save","rotate_left","rotate_right"};
+const std::array<const char*,12> actions={"place","mode","confirm","undo","label","height","rotate","save","rotate_left","rotate_right","height_up","height_down"};
 struct Buttons {
     vr::IVRInput* input=nullptr;
     vr::VRActionSetHandle_t set=0;
-    std::array<vr::VRActionHandle_t,10> handle{};
-    std::array<bool,10> down{};
+    std::array<vr::VRActionHandle_t,12> handle{};
+    std::array<bool,12> down{};
     bool ok=false, warned=false;
     bool init(const char* manifest) {
         input=vr::VRInput();
