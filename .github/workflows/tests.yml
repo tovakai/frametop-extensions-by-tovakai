@@ -31,6 +31,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check Spatial Room shell scripts
+        run: |
+          bash -n plugins/spatial-room/native/build.sh
+          bash -n plugins/spatial-room/run.sh
       - name: Fetch pinned OpenVR v2.15.6 header
         run: |
           cd plugins/spatial-room/native
