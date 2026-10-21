@@ -114,7 +114,7 @@ def render_commands(lines, header: str) -> str:
         chunks.append("segment " + " ".join(format(v, ".6f") for v in (*a, *b)) +
                       f" {palette}\n")
     chunks.append("commit\n")
-    clean = "".join(ch for ch in header.upper() if ch.isalnum() or ch in " :-./?")
+    clean = "".join(ch for ch in header.upper() if ch.isalnum() or ch in " :+-./?")
     chunks.append("hud " + clean[:56] + "\n")
     return "".join(chunks)
 
