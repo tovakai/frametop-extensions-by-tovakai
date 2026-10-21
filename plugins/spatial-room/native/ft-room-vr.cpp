@@ -190,6 +190,7 @@ const std::map<char,Glyph> font={
 {'9',{" ### ","#   #","#   #"," ####","    #","    #"," ### "}},
 {':',{"     ","  #  ","     ","     ","  #  ","     ","     "}},
 {'-',{"     ","     ","     ","#####","     ","     ","     "}},
+{'+',{"     ","  #  ","  #  ","#####","  #  ","  #  ","     "}},
 {'.',{"     ","     ","     ","     ","     "," ##  "," ##  "}},
 {'/',{"    #","    #","   # ","  #  "," #   ","#    ","#    "}},
 {'?',{" ### ","#   #","    #","  ## ","  #  ","     ","  #  "}}
@@ -208,7 +209,7 @@ void draw_hud() {
     const std::array<std::string,4> lines={
         "SPATIAL ROOM",hudText.substr(0,56),
         "R TRIG PLACE  R A CLOSE/SELECT  R GRIP MODE",
-        "R X SAVE  R Y HEIGHT  L DPAD 1 DEG  STICK 5 DEG"
+        "R X SAVE  R Y HEIGHT  DPAD L-1 R+1  STICK +5"
     };
     for(size_t ln=0;ln<lines.size();++ln) {
         int x=15,y=9+int(ln)*34;
