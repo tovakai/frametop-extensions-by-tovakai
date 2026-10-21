@@ -52,7 +52,7 @@
           }
         },
         {
-          "path": "/user/hand/left/input/y",
+          "path": "/user/hand/right/input/y",
           "mode": "button",
           "inputs": {
             "click": {
@@ -70,11 +70,29 @@
           }
         },
         {
-          "path": "/user/hand/left/input/x",
+          "path": "/user/hand/right/input/x",
           "mode": "button",
           "inputs": {
             "click": {
               "output": "/actions/room/in/save"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/dpad_left",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/room/in/rotate_left"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/dpad_right",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/room/in/rotate_right"
             }
           }
         }
