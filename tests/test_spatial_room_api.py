@@ -61,7 +61,7 @@ class RoomAPIAndEraseTest(unittest.TestCase):
         s.handle("confirm")
         self.assertEqual(s.selected_id, self.box.id)
         self.assertIn("EDIT COUCH", s.display())
-        self.assertIn("DRIGHT +1", s.display())
+        self.assertIn("UP/DN 5CM", s.display())
         self.assertEqual(sum(p == 3 for _, _, p in
                              segments_for_room(s.editor.room, selection_id=s.selected_id)), 12)
         # Right thumbstick click rotates +5 degrees; left D-pad adjusts by 1.
