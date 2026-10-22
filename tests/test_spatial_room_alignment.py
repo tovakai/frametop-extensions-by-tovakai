@@ -178,6 +178,109 @@ class AlignmentTests(unittest.TestCase):
             session.handle("save")
             self.assertEqual(len(list((Path(temp)/"exports").glob("room-*.txt"))),1)
 
+    def test_universe_recovery_requires_explicit_flag_and_keeps_geometry_hidden(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/"saved.json"
+            r=room()
+            save(path,r)
+            original=path.read_bytes()
+            strict=Session(Editor(load(path)),path=path,export_dir=None)
+            with self.assertRaisesRegex(ValueError,"--recover-universe"):
+                strict.handle("ready 888")
+            self.assertEqual(path.read_bytes(),original)
+            recovery=Session(Editor(load(path)),path=path,export_dir=None,
+                             recover_universe=True)
+            recovery.handle("ready 888")
+            recovery.handle("origin "+" ".join(map(str,MATRIX)))
+            self.assertTrue(recovery.recovery_pending)
+            self.assertEqual(recovery.editor.room.universe,73)
+            self.assertNotIn("segment ",recovery.display())
+            self.assertIn("UNIVERSE MISMATCH",recovery.display())
+            with self.assertRaisesRegex(ValueError,"left trigger"):
+                recovery.handle("place 0 2 0 0 -1 0")
+            with self.assertRaisesRegex(ValueError,"left trigger"):
+                recovery.handle("save")
+            self.assertEqual(path.read_bytes(),original)
+            self.assertEqual(list(Path(temp).glob("*.bak")),[])
+
+    def test_recover_confirms_current_origin_and_universe_only_after_right_a(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/"saved.json"
+            exports=Path(temp)/"exports"
+            original_room=room()
+            original=original_room.to_dict()
+            save(path,original_room)
+            original_bytes=path.read_bytes()
+            recovery=Session(Editor(load(path)),path=path,export_dir=exports,
+                             recover_universe=True)
+            recovery.handle("ready 888")
+            recovery.handle("origin "+" ".join(map(str,MATRIX)))
+            recovery.handle("align")
+            self.assertTrue(recovery.recovery_pending)
+            self.assertIn("RECOVER",recovery.display())
+            self.assertIn("segment ",recovery.display())
+            # The old-universe outline is all rendered with warning palette 3.
+            self.assertTrue(all(line.endswith(" 3") for line in recovery.display().splitlines()
+                                if line.startswith("segment ")))
+            recovery.handle("place 0 2 0 0 -1 0")
+            recovery.handle("aim 0.25 2 0.1 0 -1 0")
+            recovery.handle("place_up")
+            recovery.handle("rotate_right")
+            self.assertEqual(recovery.editor.room.universe,73)
+            self.assertEqual(path.read_bytes(),original_bytes)
+            recovery.handle("confirm")
+            self.assertFalse(recovery.recovery_pending)
+            self.assertEqual(recovery.editor.room.universe,888)
+            self.assertTrue(recovery.origin_verified)
+            self.assertAlmostEqual(recovery.editor.room.alignment.dx,.25)
+            self.assertAlmostEqual(recovery.editor.room.alignment.dz,.1)
+            self.assertEqual(recovery.editor.room.alignment.yaw_deg,1)
+            self.assertEqual(recovery.editor.room.alignment.origin,MATRIX)
+            recovery.handle("save")
+            backups=list(Path(temp).glob("*.bak"))
+            self.assertEqual(len(backups),1)
+            self.assertEqual(backups[0].read_bytes(),original_bytes)
+            saved=load(path)
+            self.assertEqual(saved.universe,888)
+            self.assertEqual(saved.corners,original["corners"])
+            self.assertEqual([b.to_dict() for b in saved.boxes],original["boxes"])
+            self.assertEqual(len(list(exports.glob("room-*.txt"))),1)
+            recovery.handle("save")
+            self.assertEqual(len(list(Path(temp).glob("*.bak"))),1)
+
+    def test_recover_cancel_and_undo_restore_fail_closed_lock(self):
+        r=room()
+        s=Session(Editor(r),path=Path("/unused"),export_dir=None,recover_universe=True)
+        s.handle("ready 888")
+        s.handle("origin "+" ".join(map(str,MATRIX)))
+        s.handle("align")
+        s.handle("rotate")
+        s.handle("undo") # cancel preview
+        self.assertTrue(s.recovery_pending)
+        self.assertIsNone(s.align_preview)
+        self.assertEqual(r.universe,73)
+        s.handle("align")
+        s.handle("confirm")
+        self.assertEqual(r.universe,888)
+        s.handle("undo") # cross-universe undo re-locks, not normal editing
+        self.assertEqual(s.editor.room.universe,73)
+        self.assertTrue(s.recovery_pending)
+        self.assertFalse(s.origin_verified)
+        self.assertNotIn("segment ",s.display())
+        with self.assertRaisesRegex(ValueError,"left trigger"):
+            s.handle("save")
+
+    def test_recover_requires_observed_live_origin_and_rejects_mid_session_change(self):
+        s=Session(Editor(room()),path=Path("/unused"),export_dir=None,recover_universe=True)
+        s.handle("ready 888")
+        s.handle("align")
+        with self.assertRaisesRegex(ValueError,"standing origin"):
+            s.handle("confirm")
+        self.assertEqual(s.editor.room.universe,73)
+        with self.assertRaisesRegex(ValueError,"changed during editing"):
+            s.handle("universe 999")
+        self.assertEqual(s.editor.room.universe,73)
+
     def test_reject_invalid_alignment_without_mutating_local_geometry(self):
         r=room()
         with self.assertRaises(ValueError):
