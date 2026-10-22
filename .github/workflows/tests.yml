@@ -25,3 +25,23 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Plugin discovery
         run: python tools/list_extensions.py
+
+  native-syntax:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check Spatial Room shell scripts
+        run: |
+          bash -n plugins/spatial-room/native/build.sh
+          bash -n plugins/spatial-room/run.sh
+      - name: Fetch pinned OpenVR v2.15.6 header
+        run: |
+          cd plugins/spatial-room/native
+          mkdir -p build/include
+          curl -fsSL https://raw.githubusercontent.com/ValveSoftware/openvr/v2.15.6/headers/openvr.h -o build/include/openvr.h
+          echo '1e6ed57199896cc1f7c5484e50fa18955e97be15be690beb28d998c877ead7fd  build/include/openvr.h' | sha256sum -c -
+      - name: Check native OpenVR frontend against SDK
+        run: |
+          cd plugins/spatial-room/native
+          g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror=unused-function -Wno-unused-parameter -Ibuild/include -fsyntax-only ft-room-vr.cpp

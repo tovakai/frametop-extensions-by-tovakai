@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "id": "tovakai.spatial-room",
+  "name": "Spatial Room",
+  "version": "0.2.0",
+  "description": "Experimental OpenVR manual room overlay and room layout exporter; headset validation pending",
+  "status": "prototype",
+  "min_extension_api": 1,
+  "required_capabilities": [],
+  "optional_capabilities": [],
+  "entrypoint": "session.py",
+  "dependencies": []
+}

@@ -1,0 +1,87 @@
+{
+  "default_bindings": [
+    {
+      "controller_type": "frame_controller",
+      "binding_url": "bindings_frame_controller.json"
+    }
+  ],
+  "action_sets": [
+    {
+      "name": "/actions/room",
+      "usage": "hidden"
+    }
+  ],
+  "actions": [
+    {
+      "name": "/actions/room/in/place",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/mode",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/confirm",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/undo",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/label",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/height",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/rotate",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/save",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/rotate_left",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/rotate_right",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/height_up",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/height_down",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/room/in/align",
+      "type": "boolean"
+    }
+  ],
+  "localization": [
+    {
+      "language_tag": "en_US",
+      "/actions/room": "Spatial Room editor",
+      "/actions/room/in/place": "place",
+      "/actions/room/in/mode": "mode",
+      "/actions/room/in/confirm": "confirm",
+      "/actions/room/in/undo": "undo",
+      "/actions/room/in/label": "label",
+      "/actions/room/in/height": "height",
+      "/actions/room/in/rotate": "rotate",
+      "/actions/room/in/save": "save",
+      "/actions/room/in/rotate_left": "rotate_left",
+      "/actions/room/in/rotate_right": "rotate_right",
+      "/actions/room/in/height_up": "height_up",
+      "/actions/room/in/height_down": "height_down",
+      "/actions/room/in/align": "align"
+    }
+  ]
+}
