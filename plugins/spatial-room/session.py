@@ -446,6 +446,7 @@ class Session:
             if self.recovery_confirmed and self.original_universe != self.editor.room.universe:
                 backup_old_universe(self.path, self.original_universe)
             save(self.path, self.editor.room)
+            self.recovery_confirmed = False  # Back up the original only once.
             print(f"Saved room: {self.path}", file=sys.stderr)
             if self.export_dir is not None:
                 if self.current_origin is not None and not self.origin_verified:
