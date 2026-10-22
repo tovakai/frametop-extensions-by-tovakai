@@ -257,14 +257,14 @@ class Session:
             self.origin_verified = saved is not None and all(
                 abs(a-b) <= 0.003 for a,b in zip(saved,current))
             return
+        if self.recovery_pending and self.align_preview is None and cmd not in ("origin", "align"):
+            raise ValueError("press left trigger to preview old room before recovery")
         if self.recovery_pending and cmd not in (
             "origin", "align", "aim", "place", "place_up",
             "height_up", "height_down", "rotate", "rotate_left",
             "rotate_right", "confirm", "undo"
         ):
             raise ValueError("recovering room: only alignment controls are allowed")
-        if self.recovery_pending and self.align_preview is None and cmd not in ("origin","align"):
-            raise ValueError("press left trigger to preview old room before recovery")
         if cmd == "align":
             if not self.editor.room.closed:
                 raise ValueError("close the room outline before alignment")
