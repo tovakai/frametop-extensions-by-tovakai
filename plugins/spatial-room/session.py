@@ -257,6 +257,11 @@ class Session:
             self.origin_verified = saved is not None and all(
                 abs(a-b) <= 0.003 for a,b in zip(saved,current))
             return
+        if self.recovery_pending and self.align_preview is None and cmd == "aim":
+            # Native pointer rays arrive several times per second. While the
+            # mismatched room is deliberately hidden, discard them quietly.
+            self.aim = self.aim_world = None
+            return
         if self.recovery_pending and self.align_preview is None and cmd not in ("origin", "align"):
             raise ValueError("press left trigger to preview old room before recovery")
         if self.recovery_pending and cmd not in (
