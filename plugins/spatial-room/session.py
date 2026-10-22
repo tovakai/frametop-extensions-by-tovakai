@@ -139,8 +139,36 @@ def frameport_snapshot(folder: Path, room: Room) -> Path:
     raise RuntimeError("couldn't choose a unique export filename")
 
 
+def backup_old_universe(path: Path, universe: int) -> Path:
+    """Create a lossless owner-only backup before replacing the old room file.
+
+    This only runs after the user explicitly confirms a cross-universe recovery,
+    then explicitly presses Save. Never overwrite an existing backup.
+    """
+    path = Path(path)
+    data = path.read_bytes()
+    if len(data) > 1024 * 1024:
+        raise ValueError("saved room is too large to back up")
+    for index in range(1000):
+        suffix = f".universe-{universe}" + (f"-{index:03d}" if index else "") + ".bak"
+        backup = path.with_name(path.name + suffix)
+        try:
+            with backup.open("xb") as file:
+                os.fchmod(file.fileno(), 0o600)
+                file.write(data)
+                file.flush()
+                os.fsync(file.fileno())
+            print(f"Spatial Room: original-universe backup: {backup}", file=sys.stderr)
+            return backup
+        except FileExistsError:
+            # A fresh backup for every explicitly accepted recovery.
+            continue
+    raise RuntimeError("couldn't create a unique original-universe backup")
+
+
 class Session:
-    def __init__(self, editor: Editor, *, path: Path, export_dir: Path | None):
+    def __init__(self, editor: Editor, *, path: Path, export_dir: Path | None,
+                 recover_universe: bool = False):
         self.editor = editor
         self.path = path
         self.export_dir = export_dir
@@ -158,18 +186,33 @@ class Session:
         self.error = ""
         self.last_render = ""
         self.universe_known = False  # wait for the current headset universe on every launch
+        self.recover_universe = recover_universe
+        self.recovery_pending = False
+        self.recovery_confirmed = False
+        self.original_universe = editor.room.universe
+        self.active_universe: int | None = None
 
     def handle_ready(self, universe: int) -> None:
-        if not 0 <= universe < 2**64:
-            raise ValueError("SteamVR returned invalid tracking universe")
+        if not 0 < universe < 2**64:
+            raise ValueError("SteamVR tracking universe is unknown or invalid")
+        # The native process exits if the universe changes while running.
+        # Always reject a mid-session change even when recovery is enabled.
+        if self.active_universe is not None and universe != self.active_universe:
+            raise ValueError("SteamVR universe changed during editing; exit and recover explicitly")
         room = self.editor.room
-        if not universe:
-            raise ValueError("SteamVR tracking universe is unknown: refusing to place physical geometry")
         if room.universe not in (0, universe):
-            raise ValueError(f"saved room universe {room.universe} != current SteamVR universe {universe}; "
-                             "do not apply geometry with the wrong alignment")
-        if room.universe == 0:
+            if not self.recover_universe or not room.closed:
+                raise ValueError(f"saved room universe {room.universe} != current SteamVR universe {universe}; "
+                                 "launch with --recover-universe to realign explicitly")
+            self.recovery_pending = True
+            self.origin_verified = False
+            print(f"Spatial Room: recovery requested; saved universe {room.universe}, "
+                  f"current {universe}. Geometry hidden until left-trigger preview. "
+                  "Nothing will be rewritten before alignment confirmation and Save.",
+                  file=sys.stderr)
+        elif room.universe == 0:
             room.universe = universe
+        self.active_universe = universe
         self.universe_known = True
 
     def _effective_room(self) -> Room:
@@ -214,6 +257,14 @@ class Session:
             self.origin_verified = saved is not None and all(
                 abs(a-b) <= 0.003 for a,b in zip(saved,current))
             return
+        if self.recovery_pending and cmd not in (
+            "origin", "align", "aim", "place", "place_up",
+            "height_up", "height_down", "rotate", "rotate_left",
+            "rotate_right", "confirm", "undo"
+        ):
+            raise ValueError("recovering room: only alignment controls are allowed")
+        if self.recovery_pending and self.align_preview is None and cmd not in ("origin","align"):
+            raise ValueError("press left trigger to preview old room before recovery")
         if cmd == "align":
             if not self.editor.room.closed:
                 raise ValueError("close the room outline before alignment")
@@ -289,11 +340,23 @@ class Session:
                 self.mode = "walls"
         elif cmd == "confirm":
             if self._aligning():
+                if self.current_origin is None:
+                    raise ValueError("cannot confirm alignment until SteamVR reports standing origin")
                 candidate = self.align_preview
-                self.editor.dispatch({"action": "set_alignment", "dx": candidate.dx,
-                                      "dz":candidate.dz,"yaw_deg":candidate.yaw_deg,
-                                      "origin":self.current_origin})
-                self.origin_verified = self.current_origin is not None
+                action = "recover_universe" if self.recovery_pending else "set_alignment"
+                event = {"action": action, "dx": candidate.dx,
+                         "dz": candidate.dz, "yaw_deg": candidate.yaw_deg,
+                         "origin": self.current_origin}
+                if self.recovery_pending:
+                    event["universe"] = self.active_universe
+                self.editor.dispatch(event)
+                if self.recovery_pending:
+                    print(f"Spatial Room: manually aligned room now targets universe "
+                          f"{self.active_universe}; right X saves, no file changed yet.",
+                          file=sys.stderr)
+                    self.recovery_pending = False
+                    self.recovery_confirmed = True
+                self.origin_verified = True
                 self.align_preview = None
                 self.align_drag = None
                 self.aim = None
@@ -316,6 +379,13 @@ class Session:
                 self.align_drag = None
                 return
             self.editor.dispatch({"action": "undo"})
+            if (self.active_universe is not None and
+                    self.editor.room.universe != self.active_universe):
+                self.recovery_pending = True
+                self.recovery_confirmed = False
+                self.origin_verified = False
+                self.selected_id = None
+                return
             saved = self.editor.room.alignment.origin
             self.origin_verified = (self.current_origin is not None and saved is not None
                                     and all(abs(a-b) <= 0.003 for a,b in zip(saved,self.current_origin)))
@@ -369,8 +439,12 @@ class Session:
             else:
                 self.yaw = (self.yaw + delta) % 360
         elif cmd == "save":
+            if self.recovery_pending:
+                raise ValueError("cannot save old-universe room until recovery is confirmed")
             if self._aligning():
                 raise ValueError("press A to accept alignment or B to cancel before saving")
+            if self.recovery_confirmed and self.original_universe != self.editor.room.universe:
+                backup_old_universe(self.path, self.original_universe)
             save(self.path, self.editor.room)
             print(f"Saved room: {self.path}", file=sys.stderr)
             if self.export_dir is not None:
@@ -391,7 +465,10 @@ class Session:
                      selected_id=self.selected_id)
         if self._aligning():
             a = self.align_preview
-            header = f"ALIGN X {a.dx:+.2f} Z {a.dz:+.2f} YAW {a.yaw_deg:.0f} A OK B CANCEL"
+            prefix = "RECOVER" if self.recovery_pending else "ALIGN"
+            header = f"{prefix} X {a.dx:+.2f} Z {a.dz:+.2f} YAW {a.yaw_deg:.0f} A OK B CANCEL"
+        elif self.recovery_pending:
+            header = "UNIVERSE MISMATCH  LEFT TRIGGER TO PREVIEW"
         elif self.current_origin is not None and not self.origin_verified:
             header = "ALIGNMENT UNVERIFIED  L TRIGGER ALIGN  A CONFIRM"
         selection = self.selected_id
@@ -399,9 +476,15 @@ class Session:
             selection = box_at_point(self.editor.room, self.aim)
         world = room.world_copy()
         pending = room.to_world(self.editor.pending) if self.editor.pending is not None and self.mode=="box" else None
+        # Before opt-in preview the old universe's geometry is not projected.
+        if self.recovery_pending and not self._aligning():
+            return render_commands([], header)
         geom = segments_for_room(world, pending=pending, aiming=self.aim_world,
                                  height=self.height, yaw=self.yaw+room.alignment.yaw_deg,
                                  selection_id=selection)
+        if self.recovery_pending:
+            # Render the entire untrusted assembly in the warning palette.
+            geom = [(a,b,3) for a,b,_ in geom]
         return render_commands(geom, header)
 
 
@@ -484,12 +567,18 @@ def main(argv=None) -> int:
                         help="stage room.txt snapshots here on Save; NEVER installs them to FramePort")
     parser.add_argument("--input-mode", choices=("readonly", "global"), default="readonly",
                         help="controller source; readonly (default) requires no SteamVR global bindings")
+    parser.add_argument("--recover-universe", action="store_true",
+                        help="explicitly preview and manually realign an older tracking universe; "
+                             "requires left-trigger preview, right-A confirmation and right-X save")
     parser.add_argument("--input-debug", action="store_true",
                         help="print decoded controller presses to stderr for testing")
     args = parser.parse_args(argv)
     try:
+        if args.recover_universe and not args.file.is_file():
+            raise ValueError("--recover-universe requires an existing saved room JSON")
         room = load(args.file) if args.file.exists() else Room(name=args.name, universe=0)
-        session = Session(Editor(room), path=args.file, export_dir=args.export_frameport)
+        session = Session(Editor(room), path=args.file, export_dir=args.export_frameport,
+                          recover_universe=args.recover_universe)
         return run(args.native, ROOT/"native/actions/room_actions.json", session,
                    input_mode=args.input_mode, input_debug=args.input_debug)
     except (OSError, ValueError, RuntimeError) as exc:
