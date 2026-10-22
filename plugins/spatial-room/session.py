@@ -561,6 +561,15 @@ def run(native: Path, actions: Path, session: Session, *,
                         process.wait()
             if watcher is not None:
                 watcher.join(timeout=1.0)
+            # The native frontend may exit before Python finishes writing its
+            # last HUD frame. Close the pipe here, swallowing EPIPE, so Popen's
+            # context manager cannot re-flush a broken stdin on __exit__.
+            with writer_lock:
+                if process.stdin and not process.stdin.closed:
+                    try:
+                        process.stdin.close()
+                    except (BrokenPipeError, OSError):
+                        pass
     return 1 if hard_failure or process.returncode not in (0, None) else 0
 
 
