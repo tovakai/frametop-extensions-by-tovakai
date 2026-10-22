@@ -21,7 +21,29 @@ Start in Frametop Desktop mode, ideally with passthrough visible:
 
 The wrapper starts the Python editor and temporary OpenVR overlay **inside the dev distrobox**, matching the environment where the native binary was compiled. Do not start the native executable directly on the SteamOS host. The CLI starts a temporary OpenVR overlay process. **It does not restart SteamVR or enable controller-global input.** By default the controller watcher uses vrserver's local, read-only input feed on 127.0.0.1:27062; it does not claim any controller buttons. Its first run creates an in-memory unsaved draft. The right X button saves your JSON room under ~/.config/frametop-extensions/spatial-room/room.json. If you provided --export-frameport, it also exports a timestamped, FramePort-compatible room.txt into that folder after the outline is closed. This is **staging**, not automatic import.
 
-If you prefer another room, use --file /path/to/different-room.json. A saved room with a different SteamVR universe ID is refused rather than applied at the wrong physical coordinates. If SteamVR returns universe ID 0, placement is blocked until tracking is identifiable.
+If you prefer another room, use --file /path/to/different-room.json. By default, a saved room with a different SteamVR universe ID is **strictly refused** rather than applied at the wrong physical coordinates. SteamVR universe 0 is also rejected.
+
+### Recovery after a SteamVR tracking-universe change
+
+SteamVR can assign a new tracking universe ID after a restart, recenter or playspace recalibration. This does **not** mean the room measurements were deleted. Do not manually replace the ID in JSON: the old coordinates may no longer match physical space.
+
+Only for a **closed, previously saved** room, launch recovery explicitly:
+
+```bash
+bash plugins/spatial-room/run.sh --recover-universe --input-debug \
+  --file ~/Documents/room-test.json \
+  --export-frameport ~/Documents/Spatial-Room-Exports
+```
+
+1. Recovery initially displays **UNIVERSE MISMATCH** and **hides every old room outline**. Room edits, saves and FramePort exports are blocked. Nothing touches SteamVR's floor or playspace settings.
+2. Press **left trigger** to deliberately preview the old layout in the warning color, understanding that it may be in the wrong physical position. If the old room is far away or behind you, carefully reorient/recenter your attention without relying on outlines as a safety boundary.
+3. **Hold right trigger** and point/move it along the floor to slide the whole room. Release, then use left D-pad left/right (±1°) or right thumbstick click (+5°) to fine-tune rotation. Left D-pad up/down shifts standing Z by 1 cm.
+4. **Right A** explicitly confirms that this is the room you have visually realigned to the *new* tracking universe. The new universe ID and live raw-to-standing origin signature are committed together in memory. **Right B** or **left trigger** cancels the preview without changes.
+5. **Right X** then saves the corrected room. Before overwriting the original, the editor creates a **lossless owner-only backup** next to it, named `room-test.json.universe-OLDID.bak`; existing backups are never overwritten. A FramePort export is staged only after a verified alignment confirmation.
+
+If you **undo the confirmed recovery before saving**, the old universe ID comes back and recovery locks itself again. If the universe changes again mid-session, the native client exits and all uncommitted recovery is discarded. No automatic remapping, manual JSON ID tampering, or calibration writes occur.
+
+This is an experimental realignment tool, not a physical calibration guarantee. Treat the imported outline as an untrusted visual reference until you've checked the visible corners against your actual room.
 
 ### Prototype controller map
 
