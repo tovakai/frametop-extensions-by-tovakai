@@ -242,7 +242,7 @@ class AlignmentTests(unittest.TestCase):
             self.assertEqual(backups[0].read_bytes(),original_bytes)
             saved=load(path)
             self.assertEqual(saved.universe,888)
-            self.assertEqual(saved.corners,original["corners"])
+            self.assertEqual([list(p) for p in saved.corners],original["corners"])
             self.assertEqual([b.to_dict() for b in saved.boxes],original["boxes"])
             self.assertEqual(len(list(exports.glob("room-*.txt"))),1)
             recovery.handle("save")
