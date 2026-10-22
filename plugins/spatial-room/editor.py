@@ -112,7 +112,7 @@ class Editor:
                 raise ValueError("ceiling would cut through furniture")
             self._checkpoint()
             self.room.ceiling_y = ceiling_y
-        elif action == "set_alignment":
+        elif action in ("set_alignment", "recover_universe"):
             dx = finite(event.get("dx"), "alignment dx")
             dz = finite(event.get("dz"), "alignment dz")
             yaw = finite(event.get("yaw_deg"), "alignment yaw")
@@ -125,7 +125,19 @@ class Editor:
                 if not isinstance(origin, (list, tuple)) or len(origin) != 12:
                     raise ValueError("alignment origin must be a 3x4 matrix")
                 origin = tuple(finite(v, "tracking origin") for v in origin)
+            if action == "recover_universe":
+                # Opt-in recovery is one atomic, undoable transaction. The new
+                # universe ID must NEVER be committed without a current origin.
+                target = event.get("universe")
+                if type(target) is not int or not 0 < target < 2**64:
+                    raise ValueError("recovery requires valid new tracking universe")
+                if origin is None:
+                    raise ValueError("recovery requires current tracking-origin signature")
+                if target == self.room.universe:
+                    raise ValueError("recovery target already matches room universe")
             self._checkpoint()
+            if action == "recover_universe":
+                self.room.universe = target
             self.room.alignment.dx = dx
             self.room.alignment.dz = dz
             self.room.alignment.yaw_deg = yaw % 360
