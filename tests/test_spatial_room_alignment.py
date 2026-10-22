@@ -196,6 +196,11 @@ class AlignmentTests(unittest.TestCase):
             self.assertEqual(recovery.editor.room.universe,73)
             self.assertNotIn("segment ",recovery.display())
             self.assertIn("UNIVERSE MISMATCH",recovery.display())
+            # Native sends ~8 tracking rays/second: silently ignore them until
+            # the user deliberately opens the untrusted layout preview.
+            recovery.handle("aim 0 2 0 0 -1 0")
+            self.assertIsNone(recovery.aim_world)
+            self.assertIn("UNIVERSE MISMATCH",recovery.display())
             with self.assertRaisesRegex(ValueError,"left trigger"):
                 recovery.handle("place 0 2 0 0 -1 0")
             with self.assertRaisesRegex(ValueError,"left trigger"):
